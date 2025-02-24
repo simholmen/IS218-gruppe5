@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet oppgave 2</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+    <style>
+        #map { height: 500px; }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+
+    <script>
+        // Initialize the map
+        var map = L.map('map').setView([58.1633, 8.0025], 17);
+
+        // Add OpenStreetMap tiles
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        // FeatureGroup to store drawn layers
+        var drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+
+        // Initialize the draw control and add it to the map
+        var drawControl = new L.Control.Draw({
+            edit: {
+                featureGroup: drawnItems, // Enable editing of drawn shapes
+            },
+            draw: {
+                polygon: true,
+                polyline: true,
+                rectangle: true,
+                circle: true,
+                marker: true
+            }
+        });
+        map.addControl(drawControl);
+
+        // Handle the created event
+        map.on('draw:created', function (event) {
+            var layer = event.layer;
+            drawnItems.addLayer(layer);  // Add drawn item to the feature group
+            console.log("New shape drawn:", layer.toGeoJSON());
+        });
+
+        // Kartlag
+        var openstreetmap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            });
+
+            var topoLayer = L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png', {
+                attribution: '&copy; <a href="http://www.kartverket.no/">Kartverket</a>'
+            });
+
+            var grayLayer = L.tileLayer('https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png', {
+                attribution: '&copy; <a href="http://www.kartverket.no/">Kartverket</a>'
+            });
+
+            var esriFlyfotoLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: '&copy; <a href="https://www.esri.com/">Esri</a>'
+            });
+
+            // Standard kartlag
+            topoLayer.addTo(map);
+
+             // Konroll for å endringen på kartlag
+            var baseMaps = {
+                "Topografisk kart": topoLayer,
+                "Grått kart": grayLayer,
+                "Open Streetmap": openstreetmap,
+                "Fly Foto": esriFlyfotoLayer
+            };
+            L.control.layers(baseMaps).addTo(map);
+
+    </script>
+
+</body>
+</html>
