@@ -9,6 +9,11 @@ function App() {
   const [radius, setRadius] = useState(1000);
   const [selectedDataset, setSelectedDataset] = useState('tilfluktsrom');
   const [selectedPoint, setSelectedPoint] = useState(null);
+  const [activeLayer, setActiveLayer] = useState('osm');
+  
+  // Referanser til kartlag
+  const osmLayerRef = useRef(null);
+  const flyFotoLayerRef = useRef(null);
 
   useEffect(() => {
     const testConnection = async () => {
@@ -32,14 +37,28 @@ function App() {
     testConnection();
   }, []);
   
-
   useEffect(() => {
     if (!mapInstanceRef.current && mapRef.current) {
-      mapInstanceRef.current = L.map(mapRef.current).setView([58.1599, 8.0182], 13);
+      // Kristiansand koordinater
+      const defaultPosition = [58.1599, 8.0182];
       
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      mapInstanceRef.current = L.map(mapRef.current).setView(defaultPosition, 13);
+      
+      // Opprett kartlagene
+      osmLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
-      }).addTo(mapInstanceRef.current);
+      });
+      
+      flyFotoLayerRef.current = L.tileLayer('https://waapi.webatlas.no/maptiles/tiles/webatlas-orto-newup/wa_grid/{z}/{x}/{y}.jpeg?APITOKEN=800247D7-F729-42CA-827E-4AF0D8D7C1F9', {
+        attribution: '© Webatlas'
+      });
+      
+      // Legg til standard kartlag basert på activeLayer
+      if (activeLayer === 'osm') {
+        osmLayerRef.current.addTo(mapInstanceRef.current);
+      } else {
+        flyFotoLayerRef.current.addTo(mapInstanceRef.current);
+      }
 
       mapInstanceRef.current.on('click', (e) => {
         const { lat, lng } = e.latlng;
@@ -62,14 +81,39 @@ function App() {
     };
   }, []);
 
+  // Håndter bytte av kartlag
+  useEffect(() => {
+    console.log('Aktivt lag endret til:', activeLayer);
+    
+    if (mapInstanceRef.current && osmLayerRef.current && flyFotoLayerRef.current) {
+      // Fjern begge lag først
+      if (mapInstanceRef.current.hasLayer(osmLayerRef.current)) {
+        mapInstanceRef.current.removeLayer(osmLayerRef.current);
+      }
+      
+      if (mapInstanceRef.current.hasLayer(flyFotoLayerRef.current)) {
+        mapInstanceRef.current.removeLayer(flyFotoLayerRef.current);
+      }
+      
+      // Legg til det aktive laget
+      if (activeLayer === 'osm') {
+        osmLayerRef.current.addTo(mapInstanceRef.current);
+      } else {
+        flyFotoLayerRef.current.addTo(mapInstanceRef.current);
+      }
+    }
+  }, [activeLayer]);
+
   useEffect(() => {
     if (selectedPoint && mapInstanceRef.current) {
+      // Fjern alle sirkel-lag
       mapInstanceRef.current.eachLayer((layer) => {
         if (layer instanceof L.Circle) {
           layer.remove();
         }
       });
 
+      // Legg til ny sirkel
       L.circle([selectedPoint.lat, selectedPoint.lng], {
         radius: radius,
         color: 'blue',
@@ -88,15 +132,46 @@ function App() {
       }}>
         <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Beredskapsanalyse</h1>
         
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Kartlag-velger */}
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button 
+              onClick={() => setActiveLayer('osm')}
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: activeLayer === 'osm' ? '#3b82f6' : '#2a2a2a',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: activeLayer === 'osm' ? 'bold' : 'normal'
+              }}
+            >
+              OpenStreetMap
+            </button>
+            <button 
+              onClick={() => setActiveLayer('flyfoto')}
+              style={{ 
+                padding: '0.5rem 1rem', 
+                backgroundColor: activeLayer === 'flyfoto' ? '#3b82f6' : '#2a2a2a',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontWeight: activeLayer === 'flyfoto' ? 'bold' : 'normal'
+              }}
+            >
+              Flyfoto
+            </button>
+          </div>
+
           <select
             value={selectedDataset}
             onChange={(e) => setSelectedDataset(e.target.value)}
-            style={{ padding: '0.5rem', borderRadius: '4px' }}
+            style={{ padding: '0.5rem', borderRadius: '4px', backgroundColor: '#2a2a2a', color: 'white' }}
           >
             <option value="tilfluktsrom">Tilfluktsrom</option>
             <option value="brannstasjoner">Brannstasjoner</option>
-            
           </select>
 
           <div style={{ flex: 1 }}>
