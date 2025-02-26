@@ -7,74 +7,116 @@ function App() {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const [radius, setRadius] = useState(1000);
-  const [selectedDataset, setSelectedDataset] = useState('tilfluktsrom');
+  const [selectedDataset, setSelectedDataset] = useState('brannstasjoner');
   const [selectedPoint, setSelectedPoint] = useState(null);
   const [activeLayer, setActiveLayer] = useState('osm');
+  const [loading, setLoading] = useState(false);
+  const [pointCount, setPointCount] = useState(0);
+  const [error, setError] = useState(null);
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
   const flyFotoLayerRef = useRef(null);
+  const circleLayerRef = useRef(null);
+  
+  // Kartlegg datasettnavn til tabellnavn og navnekolonner
+  const datasetConfig = {
+    'brannstasjoner': { 
+      table: 'brannstasjon', 
+      nameColumn: 'name'
+    },
+    'sykehus': { 
+      table: 'sykehus', 
+      nameColumn: 'navn'
+    },
+    'politistasjoner': { 
+      table: 'politistasjon', 
+      nameColumn: 'name'
+    }
+  };
 
+  // Test databasetilkobling ved oppstart
   useEffect(() => {
     const testConnection = async () => {
       try {
-        // Test tilkobling ved å hente alle tabeller
         const { data, error } = await supabase
-          .from('tilfluktsrom')
+          .from('brannstasjon')
           .select('*')
           .limit(1);
   
         if (error) {
-          console.error('Test failed:', error.message);
-        } else {
-          console.log('Test successful, data:', data);
+          setError('Kunne ikke koble til databasen: ' + error.message);
         }
       } catch (error) {
-        console.error('Connection error:', error);
+        setError('Tilkoblingsfeil: ' + error.message);
       }
     };
   
     testConnection();
   }, []);
   
+  // Initialiser kartet
   useEffect(() => {
     if (!mapInstanceRef.current && mapRef.current) {
       // Kristiansand koordinater
       const defaultPosition = [58.1599, 8.0182];
       
-      mapInstanceRef.current = L.map(mapRef.current).setView(defaultPosition, 13);
+      // Opprett kartet
+      mapInstanceRef.current = L.map(mapRef.current, {
+        center: defaultPosition,
+        zoom: 13,
+        zoomControl: true,
+        attributionControl: true,
+        preferCanvas: true,
+        fadeAnimation: true,
+        zoomAnimation: true,
+        minZoom: 5,
+        maxZoom: 19,
+        maxBounds: [
+          [57.0, 4.0],
+          [72.0, 32.0]
+        ],
+        maxBoundsViscosity: 1.0
+      });
       
-      // Opprett kartlagene
+      // Definer kartlag
       osmLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+        crossOrigin: true
       });
       
-      flyFotoLayerRef.current = L.tileLayer('https://waapi.webatlas.no/maptiles/tiles/webatlas-orto-newup/wa_grid/{z}/{x}/{y}.jpeg?APITOKEN=800247D7-F729-42CA-827E-4AF0D8D7C1F9', {
-        attribution: '© Webatlas'
+      flyFotoLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, and the GIS User Community',
+        maxZoom: 18,
+        crossOrigin: true
       });
       
-      // Legg til standard kartlag basert på activeLayer
+      // Legg til standard kartlag
       if (activeLayer === 'osm') {
         osmLayerRef.current.addTo(mapInstanceRef.current);
       } else {
         flyFotoLayerRef.current.addTo(mapInstanceRef.current);
       }
 
+      // Legg til klikkhåndtering
       mapInstanceRef.current.on('click', (e) => {
         const { lat, lng } = e.latlng;
         setSelectedPoint({ lat, lng });
       });
     }
 
-    // Trigger en resize event etter kartet er lastet
+    // Gjør kartet responsive
     setTimeout(() => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.invalidateSize();
       }
-    }, 100);
+    }, 200);
 
+    // Cleanup
     return () => {
       if (mapInstanceRef.current) {
+        mapInstanceRef.current.off();
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
@@ -83,8 +125,6 @@ function App() {
 
   // Håndter bytte av kartlag
   useEffect(() => {
-    console.log('Aktivt lag endret til:', activeLayer);
-    
     if (mapInstanceRef.current && osmLayerRef.current && flyFotoLayerRef.current) {
       // Fjern begge lag først
       if (mapInstanceRef.current.hasLayer(osmLayerRef.current)) {
@@ -104,24 +144,176 @@ function App() {
     }
   }, [activeLayer]);
 
-  useEffect(() => {
-    if (selectedPoint && mapInstanceRef.current) {
-      // Fjern alle sirkel-lag
-      mapInstanceRef.current.eachLayer((layer) => {
-        if (layer instanceof L.Circle) {
-          layer.remove();
+  // Funksjon for å fjerne alle markører
+  const removeAllMarkers = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.eachLayer(layer => {
+        if (layer instanceof L.Marker) {
+          mapInstanceRef.current.removeLayer(layer);
         }
       });
+    }
+  };
+
+  // Hent data fra Supabase
+  const fetchDataDirectly = async (tableName) => {
+    try {
+      const { data, error } = await supabase.rpc('get_points', {
+        table_name: tableName
+      });
+  
+      if (error) {
+        throw new Error(`Feil ved henting av data fra ${tableName}: ${error.message}`);
+      }
+      
+      if (!data || data.length === 0) {
+        return [];
+      }
+      
+      // Konverter og valider hvert datapunkt
+      const processedData = [];
+      data.forEach((item) => {
+        try {
+          const lat = parseFloat(item.lat);
+          const lng = parseFloat(item.lng);
+          
+          if (isNaN(lat) || isNaN(lng)) {
+            return; 
+          }
+          
+          const name = item.name || 'Ukjent';
+          
+          processedData.push({
+            id: item.id,
+            name: name,
+            adresse: '',
+            coordinates: [lat, lng]
+          });
+        } catch (itemError) {
+          console.error('Feil ved prosessering av punkt:', itemError);
+        }
+      });
+      
+      return processedData;
+    } catch (error) {
+      setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
+      return [];
+    }
+  };
+
+  // Håndter endring av datasett
+  useEffect(() => {
+    const fetchPostGISData = async () => {
+      if (!mapInstanceRef.current) return;
+      
+      setLoading(true);
+      setError(null);
+      
+      // Fjern alle eksisterende markører
+      removeAllMarkers();
+      
+      try {
+        const config = datasetConfig[selectedDataset];
+        if (!config) {
+          throw new Error(`Ugyldig datasett valgt: ${selectedDataset}`);
+        }
+        
+        // Hent data fra riktig tabell via RPC
+        const items = await fetchDataDirectly(config.table);
+        
+        if (!items || items.length === 0) {
+          setPointCount(0);
+          setLoading(false);
+          return;
+        }
+        
+        // Oppdater antall punkter som vises
+        setPointCount(items.length);
+        
+        // Legg til markører på kartet
+        const markers = [];
+        
+        items.forEach((item) => {
+          try {
+            const [lat, lng] = item.coordinates;
+            
+            if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+              return;
+            }
+            
+            // Opprett markør
+            const marker = L.marker([lat, lng]);
+            
+            // Legg til popup
+            const popupContent = `
+              <div>
+                <strong>${item.name}</strong>
+                ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
+              </div>
+            `;
+            
+            marker.bindPopup(popupContent);
+            marker.addTo(mapInstanceRef.current);
+            markers.push(marker);
+          } catch (error) {
+            console.error('Feil ved opprettelse av markør:', error);
+          }
+        });
+        
+        // Zoom til markørene
+        if (markers.length > 0) {
+          try {
+            // Opprett en featureGroup for å finne bounds
+            const tempGroup = L.featureGroup(markers);
+            const bounds = tempGroup.getBounds();
+            
+            if (bounds && bounds.isValid()) {
+              mapInstanceRef.current.fitBounds(bounds, {
+                padding: [50, 50],
+                maxZoom: 13,
+                animate: true
+              });
+            }
+          } catch (e) {
+            console.error('Feil ved zoom til data:', e);
+          }
+        }
+      } catch (error) {
+        console.error('Feil ved prosessering av data:', error);
+        setError(`Feil ved prosessering av data: ${error.message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchPostGISData();
+  }, [selectedDataset]);
+
+  // Håndter søkeradius
+  useEffect(() => {
+    if (selectedPoint && mapInstanceRef.current) {
+      // Fjern eksisterende sirkel
+      if (circleLayerRef.current) {
+        mapInstanceRef.current.removeLayer(circleLayerRef.current);
+      }
 
       // Legg til ny sirkel
-      L.circle([selectedPoint.lat, selectedPoint.lng], {
+      circleLayerRef.current = L.circle([selectedPoint.lat, selectedPoint.lng], {
         radius: radius,
         color: 'blue',
         fillColor: '#30c',
         fillOpacity: 0.1
       }).addTo(mapInstanceRef.current);
+      
+      // Utfør analyse innenfor radius
+      performRadiusAnalysis(selectedPoint, radius);
     }
   }, [selectedPoint, radius]);
+  
+  // Funksjon for å utføre analyse innenfor radius
+  const performRadiusAnalysis = async (point, radius) => {
+    // Implementer geografisk spørring her senere
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
@@ -170,8 +362,9 @@ function App() {
             onChange={(e) => setSelectedDataset(e.target.value)}
             style={{ padding: '0.5rem', borderRadius: '4px', backgroundColor: '#2a2a2a', color: 'white' }}
           >
-            <option value="tilfluktsrom">Tilfluktsrom</option>
             <option value="brannstasjoner">Brannstasjoner</option>
+            <option value="sykehus">Sykehus</option>
+            <option value="politistasjoner">Politistasjoner</option>
           </select>
 
           <div style={{ flex: 1 }}>
@@ -185,7 +378,25 @@ function App() {
               style={{ width: '100%' }}
             />
           </div>
+          
+          {loading ? (
+            <div>Laster data...</div>
+          ) : (
+            <div>Viser {pointCount} punkter</div>
+          )}
         </div>
+        
+        {error && (
+          <div style={{ 
+            marginTop: '0.5rem', 
+            padding: '0.5rem', 
+            backgroundColor: '#ff5555', 
+            color: 'white',
+            borderRadius: '4px'
+          }}>
+            {error}
+          </div>
+        )}
       </div>
 
       <div 
