@@ -126,6 +126,7 @@ function App() {
 
   // Variabel for å lagre brukerens posisjon-marker
   let userMarker = null;
+  let userPosition = null;
   // Funksjon for å oppdatere brukerens posisjon
   function updateUserPosition(position) {
     const { latitude, longitude } = position.coords;
@@ -138,9 +139,24 @@ function App() {
         radius: 10,
         color: 'blue',
         fillColor: 'blue',
-        fillOpacity: 0.6
+        fillOpacity: 0.6,
       }).addTo(mapInstanceRef.current).bindPopup("Du er her");
     }
+
+    userPosition = L.latLng(latitude, longitude)
+    let examplePoint = L.latLng(latitude-0.01, longitude)
+    showDistanceBetweenTwoPoints(userPosition, examplePoint)
+  }
+
+  // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
+  function showDistanceBetweenTwoPoints(pointA, pointB) {
+    L.polyline([pointA, pointB], {
+      color: 'red',
+      weight: 5,
+    }).addTo(mapInstanceRef.current);
+
+    let distance = pointA.distanceTo(pointB)
+    console.log(distance)
   }
 
   useEffect(() => {
