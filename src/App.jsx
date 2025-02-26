@@ -22,8 +22,8 @@ function App() {
   // Kartlegg datasettnavn til tabellnavn og navnekolonner
   const datasetConfig = {
     'brannstasjoner': { 
-      table: 'brannstasjon', 
-      nameColumn: 'name'
+      table: 'NyBrannstasjoner', 
+      nameColumn: 'brannstasjon'
     },
     'sykehus': { 
       table: 'sykehus', 
@@ -40,20 +40,23 @@ function App() {
     const testConnection = async () => {
       try {
         const { data, error } = await supabase
-          .from('brannstasjon')
+          .from('NyBrannstasjoner')
           .select('*')
           .limit(1);
   
         if (error) {
+          console.error('Database connection error:', error.message);
           setError('Kunne ikke koble til databasen: ' + error.message);
         }
       } catch (error) {
+        console.error('Connection error:', error.message);
         setError('Tilkoblingsfeil: ' + error.message);
       }
     };
   
     testConnection();
   }, []);
+  
   
   // Initialiser kartet
   useEffect(() => {
@@ -153,11 +156,12 @@ function App() {
         }
       });
     }
-  };
+  };  
 
   // Hent data fra Supabase
   const fetchDataDirectly = async (tableName) => {
     try {
+      console.log(`Henter data fra ${tableName}...`);
       const { data, error } = await supabase.rpc('get_points', {
         table_name: tableName
       });
@@ -173,6 +177,7 @@ function App() {
       // Konverter og valider hvert datapunkt
       const processedData = [];
       data.forEach((item) => {
+        console.log("Legger til markør:", item);
         try {
           const lat = parseFloat(item.lat);
           const lng = parseFloat(item.lng);
@@ -193,7 +198,8 @@ function App() {
           console.error('Feil ved prosessering av punkt:', itemError);
         }
       });
-      
+      console.log(`Data mottatt fra tabellen ${tableName}:`, data);
+
       return processedData;
     } catch (error) {
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
