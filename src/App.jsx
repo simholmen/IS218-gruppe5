@@ -321,6 +321,54 @@ function App() {
     // Implementer geografisk spørring her senere
   };
 
+
+  // Variabel for å lagre brukerens posisjon-marker
+  let userMarker = null;
+  let userPosition = null;
+  // Funksjon for å oppdatere brukerens posisjon
+  function updateUserPosition(position) {
+    const { latitude, longitude } = position.coords;
+
+    // Hvis markør allerede finnes, oppdater posisjonen, ellers opprett ny
+    if (userMarker) {
+      userMarker.setLatLng([latitude, longitude]);
+    } else {
+      userMarker = L.circleMarker([latitude, longitude], {
+        radius: 10,
+        color: 'blue',
+        fillColor: 'blue',
+        fillOpacity: 0.6,
+      }).addTo(mapInstanceRef.current).bindPopup("Du er her");
+    }
+
+    userPosition = L.latLng(latitude, longitude)
+    let examplePoint = L.latLng(latitude-0.01, longitude)
+    showDistanceBetweenTwoPoints(userPosition, examplePoint)
+  }
+
+  // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
+  function showDistanceBetweenTwoPoints(pointA, pointB) {
+    L.polyline([pointA, pointB], {
+      color: 'red',
+      weight: 5,
+    }).addTo(mapInstanceRef.current);
+
+    let distance = pointA.distanceTo(pointB)
+    console.log(distance)
+  }
+
+  useEffect(() => {
+    // Sette opp geolokasjon som oppdateres hvert 5. sekund
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(updateUserPosition, 
+        error => console.error('Kunne ikke hente GPS-posisjon:', error), 
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    } else {
+        console.error("Geolokasjon støttes ikke av denne nettleseren.");
+    }
+  }, []);
+
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw' }}>
       <div style={{ 
