@@ -298,8 +298,15 @@ function App() {
           }
         }
 
-        let marker = findClosestMarker(items);
-        drawLineBetweenTwoPoints(userPosition, marker.coordinates);
+        let closestMarker = findClosestMarker(items);
+        let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
+        let distance = calculateDistanceBetweenTwoPoints(userPosition, closestMarker.coordinates);
+        const distancePopup = `
+          <div>
+            <strong>${Math.round(distance)}m</strong>
+          </div>
+        `;
+        line.bindPopup(distancePopup);
 
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
@@ -368,10 +375,11 @@ function App() {
   }
 
   function drawLineBetweenTwoPoints(pointA, pointB) {
-    L.polyline([pointA, pointB], {
+    let line = L.polyline([pointA, pointB], {
       color: 'red',
       weight: 5,
     }).addTo(mapInstanceRef.current);
+    return line;
   }
 
   // Funksjon for å finne nærmeste valgte type marker
@@ -411,7 +419,6 @@ function App() {
         color: 'white'
       }}>
         <h1 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>Beredskapsanalyse</h1>
-        
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Kartlag-velger */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
