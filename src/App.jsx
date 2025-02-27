@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import L from 'leaflet';
+import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from './config/supabase';
 
@@ -13,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [pointCount, setPointCount] = useState(0);
   const [error, setError] = useState(null);
+  const [userPosition, setUserPosition] = useState(null);
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -158,6 +159,17 @@ function App() {
     }
   };  
 
+  // Funksjon for å fjerne alle linjer
+  const removeAllPolylnes = () => {
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.eachLayer(layer => {
+        if (layer instanceof L.Polyline) {
+          mapInstanceRef.current.removeLayer(layer);
+        }
+      });
+    }
+  };
+
   // Hent data fra Supabase
   const fetchDataDirectly = async (tableName) => {
     try {
@@ -215,8 +227,9 @@ function App() {
       setLoading(true);
       setError(null);
       
-      // Fjern alle eksisterende markører
+      // Fjern alle eksisterende markører og linjer
       removeAllMarkers();
+      removeAllPolylnes();
       
       try {
         const config = datasetConfig[selectedDataset];
@@ -284,6 +297,10 @@ function App() {
             console.error('Feil ved zoom til data:', e);
           }
         }
+
+        let marker = findClosestMarker(items);
+        drawLineBetweenTwoPoints(userPosition, marker.coordinates);
+
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
         setError(`Feil ved prosessering av data: ${error.message}`);
@@ -293,7 +310,7 @@ function App() {
     };
     
     fetchPostGISData();
-  }, [selectedDataset]);
+  }, [selectedDataset, userPosition]);
 
   // Håndter søkeradius
   useEffect(() => {
@@ -324,16 +341,16 @@ function App() {
 
   // Variabel for å lagre brukerens posisjon-marker
   let userMarker = null;
-  let userPosition = null;
   // Funksjon for å oppdatere brukerens posisjon
   function updateUserPosition(position) {
     const { latitude, longitude } = position.coords;
+    const newPosition = L.latLng(latitude, longitude);
 
     // Hvis markør allerede finnes, oppdater posisjonen, ellers opprett ny
     if (userMarker) {
-      userMarker.setLatLng([latitude, longitude]);
+      userMarker.setLatLng(newPosition);
     } else {
-      userMarker = L.circleMarker([latitude, longitude], {
+      userMarker = L.circleMarker(newPosition, {
         radius: 10,
         color: 'blue',
         fillColor: 'blue',
@@ -341,20 +358,37 @@ function App() {
       }).addTo(mapInstanceRef.current).bindPopup("Du er her");
     }
 
-    userPosition = L.latLng(latitude, longitude)
-    let examplePoint = L.latLng(latitude-0.01, longitude)
-    showDistanceBetweenTwoPoints(userPosition, examplePoint)
+    setUserPosition(newPosition); // Oppdater state
   }
 
   // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
-  function showDistanceBetweenTwoPoints(pointA, pointB) {
+  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
+    let distance = pointA.distanceTo(pointB);
+    return distance;
+  }
+
+  function drawLineBetweenTwoPoints(pointA, pointB) {
     L.polyline([pointA, pointB], {
       color: 'red',
       weight: 5,
     }).addTo(mapInstanceRef.current);
+  }
 
-    let distance = pointA.distanceTo(pointB)
-    console.log(distance)
+  // Funksjon for å finne nærmeste valgte type marker
+  function findClosestMarker(items) {
+    console.log("GA:")
+    console.log(items)
+    let shortest = Infinity;
+    let marker = null;
+    items.forEach((item) => {
+      let coordinate = item.coordinates;
+      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
+      if (distance < shortest) {
+        shortest = distance;
+        marker = item;
+      }
+    });
+    return marker;
   }
 
   useEffect(() => {
