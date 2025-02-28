@@ -12,12 +12,12 @@ Applikasjonen er utviklet for å visualisere og analysere beredskapsressurser so
 
 ### Hovedfunksjoner:
 
-Sanntids geolokasjon: Applikasjonen oppdaterer brukerens posisjon hvert 5. sekund og markerer denne på kartet.
-Kartbasert visualisering: Brukeren kan velge mellom OpenStreetMap eller flyfoto for å vise geografiske data.
-Dynamisk datainnhenting: Applikasjonen henter data fra en PostGIS-database via Supabase og viser relevante beredskapsressurser.
-Avstandsanalyse: Systemet finner nærmeste ressurs basert på brukerens posisjon og tegner en linje mellom disse.
-Søkeradius: Brukeren kan justere radius for å avgrense hvilke punkter som skal vurderes i analysen.
-Interaktivt grensesnitt: Brukeren kan velge mellom ulike datasetttyper, og kartet zoomer automatisk til relevante områder.
+* Sanntids geolokasjon: Applikasjonen oppdaterer brukerens posisjon hvert 5. sekund og markerer denne på kartet.
+* Kartbasert visualisering: Brukeren kan velge mellom OpenStreetMap eller flyfoto for å vise geografiske data.
+* Dynamisk datainnhenting: Applikasjonen henter data fra en PostGIS-database via Supabase og viser relevante beredskapsressurser.
+* Avstandsanalyse: Systemet finner nærmeste ressurs basert på brukerens posisjon og tegner en linje mellom disse.
+* Søkeradius: Brukeren kan justere radius for å avgrense hvilke punkter som skal vurderes i analysen.
+* Interaktivt grensesnitt: Brukeren kan velge mellom ulike datasetttyper, og kartet zoomer automatisk til relevante områder.
 
 ### Teknologier brukt:
 
