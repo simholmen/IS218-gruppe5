@@ -11,7 +11,7 @@
 ### Posisjonssporing
 
 For posisjonssporing brukte vi denne funksjonen:
-```python
+```typescript
   useEffect(() => {
     // Sette opp geolokasjon som oppdateres hvert 5. sekund
     if ("geolocation" in navigator) {
