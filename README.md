@@ -23,3 +23,40 @@ For posisjonssporing brukte vi denne funksjonen:
     }
   }, []);
 ```
+I funksjonen `updateUserPosition` lagres brukerens posisjon som en `latLng` i en React `useState` kalt `userPosition`.
+
+### Beregne avstand mellom to punkter
+
+Vi har definert følgende funksjoner:
+```jsx
+  // Funksjon for å regne ut avstand mellom to punkter
+  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
+    let distance = pointA.distanceTo(pointB);
+    return distance;
+  }
+
+  // Funksjon for å finne nærmeste valgte type marker
+  function findClosestMarker(items) {
+    let shortest = Infinity;
+    let marker = null;
+    items.forEach((item) => {
+      let coordinate = item.coordinates;
+      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
+      if (distance < shortest) {
+        shortest = distance;
+        marker = item;
+      }
+    });
+    return marker;
+  }
+```
+Når det aktive datasettet endres, går vi gjennom alle datapunktene og regner ut avstanden til de fra brukerens posisjon, og lagrer dermed punktet med kortest avstand i en variabel. Vi kan da tegne opp en linje mellom disse to punktene med denne funksjonen:
+```jsx
+  function drawLineBetweenTwoPoints(pointA, pointB) {
+    let line = L.polyline([pointA, pointB], {
+      color: 'red',
+      weight: 5,
+    }).addTo(mapInstanceRef.current);
+    return line;
+  }
+```
