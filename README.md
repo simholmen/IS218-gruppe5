@@ -2,6 +2,36 @@
 
 ## Problemstilling
 
+Hvordan kan vi visualisere og analysere geografisk beredskap ved hjelp av PostGIS og Leaflet for å finne nærmeste beredskapsressurser i sanntid?
+
+## Beskrivelse
+
+### Formål:
+
+Applikasjonen er utviklet for å visualisere og analysere beredskapsressurser som brannstasjoner, sykehus og politistasjoner på et interaktivt kart. Ved å bruke sanntids geolokasjon kan brukeren se sin egen posisjon, finne nærmeste beredskapsressurs og analysere avstanden til denne.
+
+### Hovedfunksjoner:
+
+Sanntids geolokasjon: Applikasjonen oppdaterer brukerens posisjon hvert 5. sekund og markerer denne på kartet.
+Kartbasert visualisering: Brukeren kan velge mellom OpenStreetMap eller flyfoto for å vise geografiske data.
+Dynamisk datainnhenting: Applikasjonen henter data fra en PostGIS-database via Supabase og viser relevante beredskapsressurser.
+Avstandsanalyse: Systemet finner nærmeste ressurs basert på brukerens posisjon og tegner en linje mellom disse.
+Søkeradius: Brukeren kan justere radius for å avgrense hvilke punkter som skal vurderes i analysen.
+Interaktivt grensesnitt: Brukeren kan velge mellom ulike datasetttyper, og kartet zoomer automatisk til relevante områder.
+
+### Teknologier brukt:
+
+* Frontend: React + Leaflet for kartvisualisering
+* Backend: Supabase (PostgreSQL med PostGIS for geodata)
+* Kartdata: OpenStreetMap, Esri Flyfoto
+* Geolokasjon: Browser-basert navigator.geolocation.watchPosition()
+
+### Bruksområder:
+
+* Beredskapsplanlegging: Finne nærmeste brannstasjon, sykehus eller politistasjon i en nødsituasjon.
+* Beslutningsstøtte for nødetater: Optimalisering av responstid basert på geografisk fordeling.
+* By- og transportplanlegging: Analyse av dekning for kritiske tjenester.
+
 ## Valg av teknologi
 
 ## Valg av datasett
