@@ -38,49 +38,6 @@ Applikasjonen er utviklet for å visualisere og analysere beredskapsressurser so
 
 ## Implementasjon
 
-### Posisjonssporing
-
-For posisjonssporing brukte vi denne funksjonen:
-```js
-  useEffect(() => {
-    // Sette opp geolokasjon som oppdateres hvert 5. sekund
-    if ("geolocation" in navigator) {
-      navigator.geolocation.watchPosition(updateUserPosition, 
-        error => console.error('Kunne ikke hente GPS-posisjon:', error), 
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
-    } else {
-        console.error("Geolokasjon støttes ikke av denne nettleseren.");
-    }
-  }, []);
-```
-I funksjonen `updateUserPosition` lagres brukerens posisjon som en `latLng` i en React `useState` kalt `userPosition`.
-
-### Beregne avstand mellom to punkter
-
-Vi har definert følgende funksjoner:
-```jsx
-  // Funksjon for å regne ut avstand mellom to punkter
-  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
-    let distance = pointA.distanceTo(pointB);
-    return distance;
-  }
-
-  // Funksjon for å finne nærmeste valgte type marker
-  function findClosestMarker(items) {
-    let shortest = Infinity;
-    let marker = null;
-    items.forEach((item) => {
-      let coordinate = item.coordinates;
-      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
-      if (distance < shortest) {
-        shortest = distance;
-        marker = item;
-      }
-    });
-    return marker;
-  }
-```
-
 ## Datahenting fra Supabase
 
 ```javascript
@@ -190,6 +147,49 @@ useEffect(() => {
   }
 }, []);
 ```
+### Posisjonssporing
+
+For posisjonssporing brukte vi denne funksjonen:
+```js
+  useEffect(() => {
+    // Sette opp geolokasjon som oppdateres hvert 5. sekund
+    if ("geolocation" in navigator) {
+      navigator.geolocation.watchPosition(updateUserPosition, 
+        error => console.error('Kunne ikke hente GPS-posisjon:', error), 
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    } else {
+        console.error("Geolokasjon støttes ikke av denne nettleseren.");
+    }
+  }, []);
+```
+I funksjonen `updateUserPosition` lagres brukerens posisjon som en `latLng` i en React `useState` kalt `userPosition`.
+
+### Beregne avstand mellom to punkter
+
+Vi har definert følgende funksjoner:
+```jsx
+  // Funksjon for å regne ut avstand mellom to punkter
+  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
+    let distance = pointA.distanceTo(pointB);
+    return distance;
+  }
+
+  // Funksjon for å finne nærmeste valgte type marker
+  function findClosestMarker(items) {
+    let shortest = Infinity;
+    let marker = null;
+    items.forEach((item) => {
+      let coordinate = item.coordinates;
+      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
+      if (distance < shortest) {
+        shortest = distance;
+        marker = item;
+      }
+    });
+    return marker;
+  }
+```
+
 
 Kartet initialiseres med Kristiansand som standardposisjon og konfigureres med ulike parametre for å forbedre brukeropplevelsen. To kartlag defineres: OpenStreetMap for standardkart og ESRI World Imagery for flyfotovisning. Brukeren kan klikke på kartet for å sette et punkt for radiusanalyse. 
 
