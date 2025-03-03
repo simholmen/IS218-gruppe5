@@ -147,6 +147,8 @@ useEffect(() => {
   }
 }, []);
 ```
+Kartet initialiseres med Kristiansand som standardposisjon og konfigureres med ulike parametre for å forbedre brukeropplevelsen. To kartlag defineres: OpenStreetMap for standardkart og ESRI World Imagery for flyfotovisning. Brukeren kan klikke på kartet for å sette et punkt for radiusanalyse. 
+
 ### Posisjonssporing
 
 For posisjonssporing brukte vi denne funksjonen:
@@ -191,7 +193,6 @@ Vi har definert følgende funksjoner:
 ```
 
 
-Kartet initialiseres med Kristiansand som standardposisjon og konfigureres med ulike parametre for å forbedre brukeropplevelsen. To kartlag defineres: OpenStreetMap for standardkart og ESRI World Imagery for flyfotovisning. Brukeren kan klikke på kartet for å sette et punkt for radiusanalyse. 
 
 ---
 
