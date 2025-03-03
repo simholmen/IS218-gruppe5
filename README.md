@@ -327,31 +327,6 @@ useEffect(() => {
 
 Når brukeren bytter datasett eller deres posisjon endres, utføres datainnhenting og oppdatering av kartet. Prosessen inkluderer rydding av eksisterende markører, henting av nye data, validering av datapunkter, og plassering av markør. 
 
-# Søkeradiushåndtering
-
-```javascript
-useEffect(() => {
-  if (selectedPoint && mapInstanceRef.current) {
-    // Fjern eksisterende sirkel
-    if (circleLayerRef.current) {
-      mapInstanceRef.current.removeLayer(circleLayerRef.current);
-    }
-
-    // Legg til ny sirkel
-    circleLayerRef.current = L.circle([selectedPoint.lat, selectedPoint.lng], {
-      radius: radius,
-      color: 'blue',
-      fillColor: '#30c',
-      fillOpacity: 0.1
-    }).addTo(mapInstanceRef.current);
-    
-    // Utfør analyse innenfor radius
-    performRadiusAnalysis(selectedPoint, radius);
-  }
-}, [selectedPoint, radius]);
-```
-
-Når brukeren velger et punkt på kartet eller justerer søkeradiusen, tegnes en sirkel med den spesifiserte radiusen. Eksisterende sirkler fjernes først for å unngå overlapping. Visuell fremstilling bruker en blå kontur med transparent fyll for å tydelig vise det analyserte området.
 
 ## Fjerne Markører
 
