@@ -16,7 +16,6 @@ Applikasjonen er utviklet for å visualisere og analysere beredskapsressurser so
 * Kartbasert visualisering: Brukeren kan velge mellom OpenStreetMap eller flyfoto for å vise geografiske data.
 * Dynamisk datainnhenting: Applikasjonen henter data fra en PostGIS-database via Supabase og viser relevante beredskapsressurser.
 * Avstandsanalyse: Systemet finner nærmeste valgte ressurs basert på brukerens posisjon og tegner en linje mellom disse.
-* Søkeradius: Brukeren kan justere radius for å avgrense hvilke punkter som skal vurderes i analysen.
 * Interaktivt grensesnitt: Brukeren kan velge mellom ulike datasetttyper, og kartet zoomer automatisk til relevante områder.
 
 ### Teknologier brukt:
@@ -32,9 +31,58 @@ Applikasjonen er utviklet for å visualisere og analysere beredskapsressurser so
 * Beslutningsstøtte for nødetater: Optimalisering av responstid basert på geografisk fordeling.
 * By- og transportplanlegging: Analyse av dekning for kritiske tjenester.
 
+## Skjermbilder
+
+### Brannstasjoner
+- **Fra gitt posisjon på nær avstand**  
+  ![Brannstasjoner - Fra posisjon på nær avstand](/public/screenshots/brannstasjoner_avstand_nært.png)
+- **Fra gitt posisjon på lengre avstand**  
+  ![Brannstasjoner - Fra posisjon på lengre avstand](/public/screenshots/brannstasjoner_avstand_stort.png)
+- **Generell oversikt**  
+  ![Brannstasjoner - Generell oversikt](/public/screenshots/brannstasjoner_oversikt.png)
+- **Generell oversikt Flyfoto kart**  
+  ![Brannstasjoner - Generell oversikt Flyfoto kart](/public/screenshots/brannstasjoner_oversikt2.png)
+
+### Politistasjoner
+- **Fra gitt posisjon på nær avstand**  
+  ![Politistasjoner - Fra posisjon på nær avstand](/public/screenshots/politistasjoner_avstand_nært.png)
+- **Fra gitt posisjon på lengre avstand**  
+  ![Politistasjoner - Fra posisjon på lengre avstand](/public/screenshots/politistasjoner_avstand_stort.png)
+- **Generell oversikt**  
+  ![Politistasjoner - Generell oversikt](/public/screenshots/politistasjoner_oversikt.png)
+- **Generell oversikt Flyfoto kart**  
+  ![Politistasjoner - Generell oversikt Flyfoto kart](/public/screenshots/politistasjoner_oversikt2.png)
+
+### Sykehus
+- **Fra gitt posisjon på nær avstand**  
+  ![Sykehus - Fra posisjon på nær avstand](/public/screenshots/sykehus_avstand_nært.png)
+- **Fra gitt posisjon på lengre avstand**  
+  ![Sykehus - Fra posisjon på lengre avstand](/public/screenshots/sykehus_avstand_stort.png)
+- **Generell oversikt**  
+  ![Sykehus - Generell oversikt](/public/screenshots/sykehus_oversikt.png)
+- **Generell oversikt Flyfoto kart**  
+  ![Sykehus - Generell oversikt Flyfoto kart](/public/screenshots/sykehus_oversikt2.png)
+
+
 ## Valg av teknologi
 
+Applikasjonen er bygget med Vite med React-plugin, som gir en rask utviklingsopplevelse og effektiv bundling. Leaflet er valgt for kartvirtualisering på grunn av sin lett vekt, enkel API og god støtte for geografisk data. Backenden er det brukt Supabase for database og autorisering løsning. Supabase bygger på PostgreSQL og støtter PostGIS, som muliggjør effektiv lagring og spørring av geodata. PostGIS gir kraftige GIS-funksjoner for geografisk analyse, inkludert avstandsmåling og søk innenfor en bestemt radius. Applikasjonen henter kartgrunnlag fra OpenStreetMap for detaljert, oppdatert og gratis kartdata. Brukeren kan også velge Esri Flyfoto, som gir en mer realistisk visualisering basert på satelittbilder.
+
 ## Valg av datasett
+
+### Beskrivelse
+Data om brannstasjoner, sykehus og politistasjoner hentes fra pålitelige kilder, som offentlige registre og åpne API-er. Datasettene inkluderer geokoordinater, navn og relevante metadata for hver ressurs. Geografiske data: Kartdata leveres av OpenStreetMap og Esri Flyfoto, som gir både standard kartvisning og flyfotovisning. Disse datasettene muliggjør detaljert geografisk analyse og visualisering. Applikasjonen benytter browser-basert geolokasjon for å hente sanntidsposisjon. Dette muliggjør dynamiske analyser basert på brukerens bevegelser. 
+
+### Datasatt 
+
+* Brannstasjoner (Hentet fra https://kartkatalog.geonorge.no/metadata/brannstasjoner/0ccce81d-a72e-46ca-8bd9-57b362376485?search=brannstasjon)
+* Sykehus (Via QuickOSM plugin)
+* Politistasjoner (Via QuickOSM plugin)
+
+### Kartlag
+
+* OpenStreetMap
+* Esri Flyfoto
 
 ## Implementasjon
 
@@ -147,7 +195,7 @@ useEffect(() => {
   }
 }, []);
 ```
-Kartet initialiseres med Kristiansand som standardposisjon og konfigureres med ulike parametre for å forbedre brukeropplevelsen. To kartlag defineres: OpenStreetMap for standardkart og ESRI World Imagery for flyfotovisning. Brukeren kan klikke på kartet for å sette et punkt for radiusanalyse. 
+Kartet initialiseres med Kristiansand som standardposisjon og konfigureres med ulike parametre for å forbedre brukeropplevelsen. To kartlag defineres: OpenStreetMap for standardkart og ESRI World Imagery for flyfotovisning.
 
 ### Posisjonssporing
 
