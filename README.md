@@ -1,5 +1,34 @@
 # Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)
 
+## Innholdsfortegnelse
+
+- [Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)](#oppgave-2-geografiske-it-utvikling-is-218-gruppe-5)
+  - [Problemstilling](#problemstilling)
+  - [Beskrivelse](#beskrivelse)
+    - [Formål](#formål)
+    - [Hovedfunksjoner](#hovedfunksjoner)
+    - [Teknologier brukt](#teknologier-brukt)
+    - [Bruksområder](#bruksområder)
+  - [Skjermbilder](#skjermbilder)
+    - [Brannstasjoner](#brannstasjoner)
+    - [Politistasjoner](#politistasjoner)
+    - [Sykehus](#sykehus)
+  - [Valg av teknologi](#valg-av-teknologi)
+  - [Valg av datasett](#valg-av-datasett)
+    - [Beskrivelse](#beskrivelse-1)
+    - [Datasett](#datasett)
+    - [Kartlag](#kartlag)
+  - [Implementasjon](#implementasjon)
+    - [Datahenting fra Supabase](#datahenting-fra-supabase)
+    - [Database Tilkoblingstest](#database-tilkoblingstest-for-debugging)
+    - [Kartinitialisering](#kartinitialisering)
+    - [Posisjonssporing](#posisjonssporing)
+    - [Beregne avstand mellom to punkter](#beregne-avstand-mellom-to-punkter)
+    - [Håndtering av Kartlagbytte](#håndtering-av-kartlagbytte)
+    - [Datahåndtering ved Datasettbytte](#datahåndtering-ved-datasettbytte)
+    - [Fjerne Markører](#fjerne-markører)
+    - [Fjerne Linjer](#fjerne-linjer)
+
 ## Problemstilling
 
 > Hvordan kan vi visualisere og analysere geografisk beredskap ved hjelp av PostGIS og Leaflet for å finne nærmeste beredskapsressurser i sanntid?
@@ -73,11 +102,11 @@ Applikasjonen er bygget med Vite med React-plugin, som gir en rask utviklingsopp
 ### Beskrivelse
 Data om brannstasjoner, sykehus og politistasjoner hentes fra pålitelige kilder, som offentlige registre og åpne API-er. Datasettene inkluderer geokoordinater, navn og relevante metadata for hver ressurs. Geografiske data: Kartdata leveres av OpenStreetMap og Esri Flyfoto, som gir både standard kartvisning og flyfotovisning. Disse datasettene muliggjør detaljert geografisk analyse og visualisering. Applikasjonen benytter browser-basert geolokasjon for å hente sanntidsposisjon. Dette muliggjør dynamiske analyser basert på brukerens bevegelser. 
 
-### Datasatt 
+### Datasett 
 
 * Brannstasjoner (Hentet fra https://kartkatalog.geonorge.no/metadata/brannstasjoner/0ccce81d-a72e-46ca-8bd9-57b362376485?search=brannstasjon)
-* Sykehus (Via QuickOSM plugin)
-* Politistasjoner (Via QuickOSM plugin)
+* Sykehus (Via QuickOSM plugin som benytter seg av OverpassTurbo API)
+* Politistasjoner (QuickOSM)
 
 ### Kartlag
 
