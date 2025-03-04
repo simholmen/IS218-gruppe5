@@ -5,7 +5,7 @@
 
 ### Brannstasjoner
 - **Nær avstand**  
-  ![Brannstasjoner - Fra posisjon på nær avstand](../public/screenshots/brannstasjoner_avstand_nært.png)
+  ![Brannstasjoner - Fra posisjon på nær avstand](/public/screenshots/brannstasjoner_avstand_nært.png)
 - **Stor avstand**  
   ![Brannstasjoner - Fra posisjon på lengre avstand](../public/screenshots/brannstasjoner_avstand_stort.png)
 - **Oversikt**  
