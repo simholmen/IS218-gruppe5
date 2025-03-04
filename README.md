@@ -359,5 +359,3 @@ const removeAllPolylnes = () => {
 ```
 
 Alle linjer fra kartet ved å identifisere lag av typen L.Polyline. Dette sikrer at gamle avstandslinjer ikke forblir synlige når nye data lastes.
-
-
