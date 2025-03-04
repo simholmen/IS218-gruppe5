@@ -298,6 +298,10 @@ function App() {
           }
         }
 
+        if (!userPosition) {
+          console.warn("User position is not available.");
+          return;
+        }
         let closestMarker = findClosestMarker(items);
         let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
         let distance = calculateDistanceBetweenTwoPoints(userPosition, closestMarker.coordinates);
@@ -320,6 +324,7 @@ function App() {
   }, [selectedDataset, userPosition]);
 
   // Håndter søkeradius
+  /*
   useEffect(() => {
     if (selectedPoint && mapInstanceRef.current) {
       // Fjern eksisterende sirkel
@@ -339,6 +344,7 @@ function App() {
       performRadiusAnalysis(selectedPoint, radius);
     }
   }, [selectedPoint, radius]);
+  */
   
   // Funksjon for å utføre analyse innenfor radius
   const performRadiusAnalysis = async (point, radius) => {
@@ -350,7 +356,17 @@ function App() {
   let userMarker = null;
   // Funksjon for å oppdatere brukerens posisjon
   function updateUserPosition(position) {
+    if (!position || !position.coords) {
+      console.error("Invalid position data received:", position);
+      return;
+    }
+    
     const { latitude, longitude } = position.coords;
+    if (isNaN(latitude) || isNaN(longitude)) {
+      console.error("Invalid GPS coordinates received:", latitude, longitude);
+      return;
+    }
+
     const newPosition = L.latLng(latitude, longitude);
 
     // Hvis markør allerede finnes, oppdater posisjonen, ellers opprett ny
@@ -370,22 +386,43 @@ function App() {
 
   // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
   function calculateDistanceBetweenTwoPoints(pointA, pointB) {
-    let distance = pointA.distanceTo(pointB);
-    return distance;
+    if (!pointA || !pointB) {
+      console.error("Invalid points for distance calculation:", pointA, pointB);
+      return Infinity; // Return a high value to avoid incorrect comparisons
+    }
+    try {
+      let distance = pointA.distanceTo(pointB);
+      return distance;
+    }
+    catch (e) {
+      console.error('Feil ved lesing av posisjon:', e);
+      return Infinity;
+    }
   }
 
   function drawLineBetweenTwoPoints(pointA, pointB) {
-    let line = L.polyline([pointA, pointB], {
-      color: 'red',
-      weight: 5,
-    }).addTo(mapInstanceRef.current);
-    return line;
+    try {
+      let line = L.polyline([pointA, pointB], {
+        color: 'red',
+        weight: 5,
+      }).addTo(mapInstanceRef.current);
+      return line;
+    }
+    catch (e) {
+      console.error('Feil ved lesing av posisjon:', e);
+    }
   }
 
   // Funksjon for å finne nærmeste valgte type marker
   function findClosestMarker(items) {
+    if (!userPosition) {
+      console.warn("User position is not set.");
+      return null;
+    }
+
     console.log("GA:")
     console.log(items)
+
     let shortest = Infinity;
     let marker = null;
     items.forEach((item) => {
@@ -462,7 +499,8 @@ function App() {
             <option value="politistasjoner">Politistasjoner</option>
           </select>
 
-          <div style={{ flex: 1 }}>
+          
+          {/* <div style={{ flex: 1 }}>
             <label>Søkeradius: {radius} meter</label>
             <input
               type="range"
@@ -472,7 +510,7 @@ function App() {
               onChange={(e) => setRadius(Number(e.target.value))}
               style={{ width: '100%' }}
             />
-          </div>
+          </div> */}
           
           {loading ? (
             <div>Laster data...</div>
