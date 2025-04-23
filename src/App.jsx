@@ -3,6 +3,7 @@ import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from './config/supabase';
 
+
 function App() {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -14,6 +15,7 @@ function App() {
   const [pointCount, setPointCount] = useState(0);
   const [error, setError] = useState(null);
   const [userPosition, setUserPosition] = useState(null);
+  const [useRoadDistance, setUseRoadDistance] = useState(false);
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -302,12 +304,22 @@ function App() {
           console.warn("User position is not available.");
           return;
         }
-        let closestMarker = findClosestMarker(items);
+          const { closestMarker, shortestDistance } = findClosestMarker(items, useRoadDistance);        
+          if (!closestMarker || !closestMarker.coordinates || closestMarker.coordinates.length !== 2) {
+          console.error("Invalid closest marker or coordinates:", closestMarker);
+          return;
+        }
+
         let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        let distance = calculateDistanceBetweenTwoPoints(userPosition, closestMarker.coordinates);
+        if (!line) {
+          console.error("Failed to draw line.");
+          return;
+        }
+
+
         const distancePopup = `
           <div>
-            <strong>${Math.round(distance)}m</strong>
+            <strong>${Math.round(shortestDistance)}m</strong>
           </div>
         `;
         line.bindPopup(distancePopup);
@@ -362,6 +374,7 @@ function App() {
     }
     
     const { latitude, longitude } = position.coords;
+    // console.log("User position updated:", latitude, longitude); // Debugging log
     if (isNaN(latitude) || isNaN(longitude)) {
       console.error("Invalid GPS coordinates received:", latitude, longitude);
       return;
@@ -386,57 +399,136 @@ function App() {
 
   // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
   function calculateDistanceBetweenTwoPoints(pointA, pointB) {
-    if (!pointA || !pointB) {
+    if (!pointA || !pointB || !pointB[0] || !pointB[1]) {
       console.error("Invalid points for distance calculation:", pointA, pointB);
       return Infinity; // Return a high value to avoid incorrect comparisons
     }
     try {
-      let distance = pointA.distanceTo(pointB);
+      let distance = pointA.distanceTo(L.latLng(pointB[0], pointB[1]));
       return distance;
-    }
-    catch (e) {
+    } catch (e) {
       console.error('Feil ved lesing av posisjon:', e);
       return Infinity;
     }
   }
 
   function drawLineBetweenTwoPoints(pointA, pointB) {
+    if (!pointA || !pointB || !pointB[0] || !pointB[1]) {
+      console.error("Invalid points for drawing line:", pointA, pointB);
+      return null;
+    }
+
     try {
-      let line = L.polyline([pointA, pointB], {
+      let line = L.polyline([pointA, L.latLng(pointB[0], pointB[1])], {
         color: 'red',
         weight: 5,
       }).addTo(mapInstanceRef.current);
       return line;
-    }
-    catch (e) {
+    } catch (e) {
       console.error('Feil ved lesing av posisjon:', e);
+      return null;
     }
   }
 
+
+  // Add this function to calculate road distances using OpenRouteService
+  async function findClosestByRoad(userCoords, items) {
+    let shortestDistance = Infinity;
+    let closestMarker = null;
+
+    const apikey = process.env.REACT_APP_OPENROUTESERVICE_API_KEY; 
+    if (!apiKey) {
+      console.error("API key is missing. Please check your .env file.");
+      return { closestMarker: null, shortestDistance: Infinity };
+    }
+
+    for (const item of items) {
+      if (!item.coordinates || item.coordinates.length !== 2) {
+        console.error("Invalid coordinates for item:", item);
+        continue;
+      }
+      
+      const destCoords = [item.coordinates[1], item.coordinates[0]]; // Ensure [lng, lat]
+
+      try {
+        const response = await fetch('https://cors-anywhere.herokuapp.com/https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+          method: 'POST',
+          headers: {
+            'Authorization': apikey, 
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            coordinates: [
+              [userCoords.lng, userCoords.lat], // [lng, lat]
+              [destCoords[1], destCoords[0]],  // [lng, lat]
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          console.error(`API error: ${response.statusText}`);
+          continue;
+        }
+
+        const data = await response.json();
+        console.log("API response:", data); // Debugging log
+
+        const distance = data.features[0].properties.summary.distance; // meters
+        console.log(`Road distance to ${item.name}: ${distance} meters`); // Debugging log
+
+
+        if (distance < shortestDistance) {
+          shortestDistance = distance;
+          closestMarker = item;
+        }
+      } catch (error) {
+        console.error('Error fetching road distance:', error);
+      }
+    }
+
+    return { closestMarker, shortestDistance };
+  }
+
+
+
   // Funksjon for å finne nærmeste valgte type marker
-  function findClosestMarker(items) {
+  function findClosestMarker(items,  useRoadDistance = false) {
     if (!userPosition) {
       console.warn("User position is not set.");
       return null;
     }
-
+    if (useRoadDistance) {
+      console.log("Calculating road distance..."); // Debugging log
+      return findClosestByRoad(userPosition, items);
+    } else {
+    console.log("Calculating air distance..."); // Debugging log
     console.log("GA:")
     console.log(items)
-
     let shortest = Infinity;
     let marker = null;
+
     items.forEach((item) => {
-      let coordinate = item.coordinates;
-      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
+      if (!item.coordinates || item.coordinates.length !== 2) {
+        console.error("Invalid coordinates for item:", item);
+        return;
+      }
+
+      let distance = calculateDistanceBetweenTwoPoints(userPosition, item.coordinates);
       if (distance < shortest) {
         shortest = distance;
         marker = item;
       }
     });
-    return marker;
+
+    if (!marker) {
+      console.error("No valid marker found.");
+    }
+    return { closestMarker: marker, shortestDistance: shortest };
+    }
   }
 
   useEffect(() => {
+
     // Sette opp geolokasjon som oppdateres hvert 5. sekund
     if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(updateUserPosition, 
@@ -498,6 +590,21 @@ function App() {
             <option value="sykehus">Sykehus</option>
             <option value="politistasjoner">Politistasjoner</option>
           </select>
+
+
+             {/* Checkbox for toggling distance type */}
+          <div>
+            <label style={{ color: 'white' }}>
+              <input
+                type="checkbox"
+                checked={useRoadDistance}
+                onChange={(e) => setUseRoadDistance(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Bruk veidistanse
+            </label>
+          </div>
+
 
           
           {/* <div style={{ flex: 1 }}>
