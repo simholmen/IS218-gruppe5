@@ -306,7 +306,7 @@ function App() {
         }
 
         // Add more robust error checking
-        const result = findClosestMarker(items, useRoadDistance);
+        const result = await findClosestMarker(items, useRoadDistance);
         if (!result || !result.closestMarker) {
           console.warn("No closest marker found");
           return;
@@ -318,19 +318,23 @@ function App() {
           return;
         }
 
-        let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        if (!line) {
-          console.error("Failed to draw line.");
-          return;
+        let line;
+        if (useRoadDistance && closestMarker.routeGeometry) {
+          // Draw line following the road
+          line = drawRoadRoute(closestMarker.routeGeometry, 'blue');
+        } else {
+          // Draw direct line (air distance)
+          line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
         }
 
-
-        const distancePopup = `
-          <div>
-            <strong>${Math.round(shortestDistance)}m</strong>
-          </div>
-        `;
-        line.bindPopup(distancePopup);
+        if (line) {
+          const distancePopup = `
+            <div>
+              <strong>${Math.round(shortestDistance)}m</strong>
+            </div>
+          `;
+          line.bindPopup(distancePopup);
+        }
 
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
@@ -438,6 +442,33 @@ function App() {
     }
   }
 
+    // New function to draw a road route
+  function drawRoadRoute(routeGeometry, color = 'blue') {
+    if (!mapInstanceRef.current || !routeGeometry || routeGeometry.length === 0) {
+      console.error("Invalid route geometry or map instance");
+      return null;
+    }
+  
+    try {
+      // Create an array of LatLng objects from the route geometry
+      // Note: GeoJSON returns coordinates as [lng, lat] but Leaflet needs [lat, lng]
+      const latLngs = routeGeometry.map(coord => L.latLng(coord[1], coord[0]));
+      
+      // Create the polyline with the route coordinates
+      const roadLine = L.polyline(latLngs, {
+        color: color,
+        weight: 5,
+        opacity: 0.7,
+        lineJoin: 'round'
+      }).addTo(mapInstanceRef.current);
+      
+      return roadLine;
+    } catch (e) {
+      console.error('Error drawing road route:', e);
+      return null;
+    }
+  }
+
 
   // Add this function to calculate road distances using OpenRouteService
   async function findClosestByRoad(userCoords, items) {
@@ -524,9 +555,12 @@ function App() {
           const distance = data.features[0].properties.summary.distance; // meters
           console.log(`Road distance to ${item.name}: ${distance} meters`);
           
+          // Store the route geometry for the closest path
           if (distance < shortestDistance) {
             shortestDistance = distance;
             closestMarker = item;
+            // Store the route geometry for drawing later
+            closestMarker.routeGeometry = data.features[0].geometry.coordinates;
           }
         } else {
           console.error("Invalid API response format:", data);
@@ -548,7 +582,7 @@ function App() {
 
 
   // Funksjon for å finne nærmeste valgte type marker
-  function findClosestMarker(items, useRoadDistance = false) {
+  async function findClosestMarker(items, useRoadDistance = false) {
     if (!userPosition) {
       console.warn("User position is not set.");
       return { closestMarker: null, shortestDistance: Infinity };
@@ -557,15 +591,19 @@ function App() {
     if (useRoadDistance) {
       console.log("Calculating road distance...");
       try {
-        return findClosestByRoad(userPosition, items);
+        // Await the result
+        const roadResult = await findClosestByRoad(userPosition, items);
+        if (roadResult && roadResult.closestMarker) {
+          console.log("Successfully found closest by road");
+          return roadResult;
+        }
+        console.warn("Road distance calculation didn't find a result, falling back to air distance");
       } catch (error) {
         console.error("Road distance calculation failed, falling back to air distance:", error);
-        // Fall back to air distance if road distance fails
-        useRoadDistance = false;
       }
     }
     
-    // Calculate air distance
+    // Calculate air distance as fallback
     console.log("Calculating air distance...");
     console.log("GA:")
     console.log(items)
