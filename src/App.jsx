@@ -24,15 +24,23 @@ function App() {
   const datasetConfig = {
     'brannstasjoner': { 
       table: 'NyBrannstasjoner', 
-      nameColumn: 'brannstasjon'
+      nameColumn: 'brannstasjon',
+      type: 'points' 
     },
     'sykehus': { 
       table: 'sykehus', 
-      nameColumn: 'navn'
+      nameColumn: 'navn',
+      type: 'points' 
     },
     'politistasjoner': { 
       table: 'politistasjon', 
-      nameColumn: 'name'
+      nameColumn: 'name',
+      type: 'points' 
+    },
+    'linjer': { 
+      table: 'linesForShortestPath', 
+      nameColumn: 'name',
+      type: 'lines' 
     }
   };
 
@@ -171,147 +179,181 @@ function App() {
   };
 
   // Hent data fra Supabase
-  const fetchDataDirectly = async (tableName) => {
+  const fetchDataDirectly = async (tableName, type) => {
     try {
       console.log(`Henter data fra ${tableName}...`);
-      const { data, error } = await supabase.rpc('get_points', {
+      const { data, error } = await supabase.rpc('get_pointstest', {
         table_name: tableName
       });
   
       if (error) {
         throw new Error(`Feil ved henting av data fra ${tableName}: ${error.message}`);
       }
-      
+  
       if (!data || data.length === 0) {
+        console.log(`Ingen data funnet i tabellen ${tableName}.`);
         return [];
       }
-      
-      // Konverter og valider hvert datapunkt
-      const processedData = [];
-      data.forEach((item) => {
-        console.log("Legger til markør:", item);
-        try {
-          const lat = parseFloat(item.lat);
-          const lng = parseFloat(item.lng);
-          
-          if (isNaN(lat) || isNaN(lng)) {
-            return; 
-          }
-          
-          const name = item.name || 'Ukjent';
-          
-          processedData.push({
-            id: item.id,
-            name: name,
-            adresse: '',
-            coordinates: [lat, lng]
-          });
-        } catch (itemError) {
-          console.error('Feil ved prosessering av punkt:', itemError);
-        }
-      });
-      console.log(`Data mottatt fra tabellen ${tableName}:`, data);
-
-      return processedData;
+  
+      console.log(`Data hentet fra ${tableName}:`, data); // Log the retrieved data
+  
+      if (type === 'lines') {
+        // Process lines
+        return data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          coordinates: item.coordinates.coordinates // Extract coordinates from GeoJSON
+        }));
+      } else {
+        // Process points
+        return data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          adresse: '',
+          coordinates: [parseFloat(item.lat), parseFloat(item.lng)]
+        }));
+      }
     } catch (error) {
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
+      console.error(`Feil ved henting av data fra ${tableName}:`, error); // Log the error
       return [];
     }
+  };
+
+  const runShortestPath = async (startPoint, endPoint) => {
+    try {
+      // Fetch line data from the database
+      const lineData = await fetchDataDirectly('linesForShortestPath', 'lines');
+      if (!lineData || lineData.length === 0) {
+        console.error('No line data found in the database.');
+        return;
+      }
+  
+      // Prepare the line data for QGIS
+      const lineFeatures = lineData.map((line) => ({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: line.coordinates, // Ensure coordinates are in [lng, lat] format
+        },
+        properties: {
+          id: line.id,
+          name: line.name || 'Unnamed',
+        },
+      }));
+  
+      const geoJson = {
+        type: 'FeatureCollection',
+        features: lineFeatures,
+      };
+  
+      // Send the line data and points to the backend for processing
+      const response = await fetch('http://localhost:5000/shortestpath', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          start_point: startPoint,
+          end_point: endPoint,
+          line_data: geoJson, // Pass the line data as GeoJSON
+        }),
+      });
+  
+      const data = await response.json();
+      if (data.success) {
+        console.log('Shortest path result:', data.features);
+  
+        // Visualize the shortest path on the map
+        visualizeShortestPath(data.features);
+      } else {
+        console.error('Error running shortest path:', data.error);
+      }
+    } catch (error) {
+      console.error('Error connecting to backend:', error);
+    }
+  };
+
+  const visualizeShortestPath = (features) => {
+    features.forEach((feature) => {
+      const line = L.polyline(
+        L.GeoJSON.coordsToLatLngs(feature.geometry.coordinates), // Convert WKT to LatLngs
+        { color: 'red', weight: 3 }
+      ).addTo(mapInstanceRef.current);
+    });
   };
 
   // Håndter endring av datasett
   useEffect(() => {
     const fetchPostGISData = async () => {
       if (!mapInstanceRef.current) return;
-      
+  
       setLoading(true);
       setError(null);
-      
+  
       // Fjern alle eksisterende markører og linjer
       removeAllMarkers();
       removeAllPolylnes();
-      
+  
       try {
         const config = datasetConfig[selectedDataset];
         if (!config) {
           throw new Error(`Ugyldig datasett valgt: ${selectedDataset}`);
         }
-        
+  
         // Hent data fra riktig tabell via RPC
-        const items = await fetchDataDirectly(config.table);
-        
+        const items = await fetchDataDirectly(config.table, config.type);
+  
         if (!items || items.length === 0) {
           setPointCount(0);
           setLoading(false);
           return;
         }
-        
-        // Oppdater antall punkter som vises
+  
         setPointCount(items.length);
+  
+        if (config.type === 'lines') {
+          // Add lines to the map
+          items.forEach((item) => {
+            try {
+              // Ensure coordinates are in [lat, lng] format
+              const transformedCoordinates = item.coordinates.map(([lng, lat]) => [lat, lng]);
         
-        // Legg til markører på kartet
-        const markers = [];
+              const line = L.polyline(transformedCoordinates, {
+                color: 'blue',
+                weight: 1
+              }).addTo(mapInstanceRef.current);
         
-        items.forEach((item) => {
-          try {
-            const [lat, lng] = item.coordinates;
-            
-            if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-              return;
+              line.bindPopup(`<strong>${item.name}</strong>`);
+            } catch (error) {
+              console.error('Feil ved opprettelse av linje:', error);
             }
-            
-            // Opprett markør
-            const marker = L.marker([lat, lng]);
-            
-            // Legg til popup
-            const popupContent = `
-              <div>
-                <strong>${item.name}</strong>
-                ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
-              </div>
-            `;
-            
-            marker.bindPopup(popupContent);
-            marker.addTo(mapInstanceRef.current);
-            markers.push(marker);
-          } catch (error) {
-            console.error('Feil ved opprettelse av markør:', error);
-          }
-        });
-        
-        // Zoom til markørene
-        if (markers.length > 0) {
-          try {
-            // Opprett en featureGroup for å finne bounds
-            const tempGroup = L.featureGroup(markers);
-            const bounds = tempGroup.getBounds();
-            
-            if (bounds && bounds.isValid()) {
-              mapInstanceRef.current.fitBounds(bounds, {
-                padding: [50, 50],
-                maxZoom: 13,
-                animate: true
-              });
+          });
+        } else {
+          // Add points to the map
+          items.forEach((item) => {
+            try {
+              const [lat, lng] = item.coordinates;
+  
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+                return;
+              }
+  
+              const marker = L.marker([lat, lng]);
+              const popupContent = `
+                <div>
+                  <strong>${item.name}</strong>
+                  ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
+                </div>
+              `;
+  
+              marker.bindPopup(popupContent);
+              marker.addTo(mapInstanceRef.current);
+            } catch (error) {
+              console.error('Feil ved opprettelse av markør:', error);
             }
-          } catch (e) {
-            console.error('Feil ved zoom til data:', e);
-          }
+          });
         }
-
-        if (!userPosition) {
-          console.warn("User position is not available.");
-          return;
-        }
-        let closestMarker = findClosestMarker(items);
-        let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        let distance = calculateDistanceBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        const distancePopup = `
-          <div>
-            <strong>${Math.round(distance)}m</strong>
-          </div>
-        `;
-        line.bindPopup(distancePopup);
-
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
         setError(`Feil ved prosessering av data: ${error.message}`);
@@ -319,7 +361,7 @@ function App() {
         setLoading(false);
       }
     };
-    
+  
     fetchPostGISData();
   }, [selectedDataset, userPosition]);
 
@@ -487,6 +529,16 @@ function App() {
             >
               Flyfoto
             </button>
+
+            <button
+            onClick={() => runShortestPath(
+              '890204.453494,7964767.867410 [EPSG:3395]',
+               '890965.515919,7965532.874908 [EPSG:3395]'
+            )}
+            >
+              Find Shortest Path
+            </button>
+
           </div>
 
           <select
@@ -497,6 +549,7 @@ function App() {
             <option value="brannstasjoner">Brannstasjoner</option>
             <option value="sykehus">Sykehus</option>
             <option value="politistasjoner">Politistasjoner</option>
+            <option value="linjer">Linjer</option>
           </select>
 
           
