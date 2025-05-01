@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-draw/dist/leaflet.draw.css';
+import 'leaflet-draw'
 import { supabase } from './config/supabase';
-import proj4 from "proj4";
+import {runShortestPath, visualizeShortestPath } from "./aiShortestPath";
 
 function App() {
   const mapRef = useRef(null);
@@ -15,6 +17,9 @@ function App() {
   const [pointCount, setPointCount] = useState(0);
   const [error, setError] = useState(null);
   const [userPosition, setUserPosition] = useState(null);
+  const [startPoint, setStartPoint] = useState(null);
+  const [endPoint, setEndPoint] = useState(null);
+  const pointsRef = useRef({ startPoint: null, endPoint: null });
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -37,11 +42,6 @@ function App() {
       table: 'politistasjon', 
       nameColumn: 'name',
       type: 'points' 
-    },
-    'linjer': { 
-      table: 'linesForShortestPath', 
-      nameColumn: 'name',
-      type: 'lines' 
     }
   };
 
@@ -112,11 +112,46 @@ function App() {
         flyFotoLayerRef.current.addTo(mapInstanceRef.current);
       }
 
-      // Legg til klikkhåndtering
-      mapInstanceRef.current.on('click', (e) => {
-        const { lat, lng } = e.latlng;
-        setSelectedPoint({ lat, lng });
-      });
+      // Add draw control
+    const drawControl = new L.Control.Draw({
+      draw: {
+        marker: true, // Enable marker placement
+        polyline: true, // Enable line drawing
+        polygon: false, // Disable polygon drawing
+        rectangle: false, // Disable rectangle drawing
+        circle: false, // Disable circle drawing
+      },
+      edit: {
+        featureGroup: new L.FeatureGroup().addTo(mapInstanceRef.current), // Layer for editable features
+      },
+    });
+
+    mapInstanceRef.current.addControl(drawControl);
+
+    mapInstanceRef.current.on(L.Draw.Event.CREATED, (e) => {
+      const layer = e.layer;
+    
+      if (e.layerType === 'marker') {
+        const { lat, lng } = layer.getLatLng();
+    
+        if (!pointsRef.current.startPoint) {
+          pointsRef.current.startPoint = { lat, lng };
+          setStartPoint({ lat, lng });
+          console.log('Start point set:', { lat, lng });
+          layer.bindPopup('Start Point').openPopup();
+        } else if (!pointsRef.current.endPoint) {
+          pointsRef.current.endPoint = { lat, lng };
+          setEndPoint({ lat, lng });
+          console.log('End point set:', { lat, lng });
+          layer.bindPopup('End Point').openPopup();
+        } else {
+          console.warn('Both points are already set. Reset to select new points.');
+        }
+      }
+    
+      // Add the drawn layer to the map
+      layer.addTo(mapInstanceRef.current);
+    });
     }
 
     // Gjør kartet responsive
@@ -157,27 +192,16 @@ function App() {
     }
   }, [activeLayer]);
 
-  // Funksjon for å fjerne alle markører
-  const removeAllMarkers = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Marker) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };  
-
-  // Funksjon for å fjerne alle linjer
-  const removeAllPolylnes = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Polyline) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };
+  // Funksjon for å fjerne alle markører og linjer
+const removeAllMarkersAndPolylines = () => {
+  if (mapInstanceRef.current) {
+    mapInstanceRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+        mapInstanceRef.current.removeLayer(layer);
+      }
+    });
+  }
+};
 
   // Hent data fra Supabase
   const fetchDataDirectly = async (tableName, type) => {
@@ -203,164 +227,25 @@ function App() {
         return data.map((item) => ({
           id: item.id,
           name: item.name || 'Ukjent',
-          coordinates: item.coordinates.coordinates // Extract coordinates from GeoJSON
+          coordinates: item.coordinates.coordinates 
         }));
       } else {
         // Process points
-        return data.map((item) => ({
+        const processedData = data.map((item) => ({
           id: item.id,
           name: item.name || 'Ukjent',
           adresse: '',
-          coordinates: [parseFloat(item.lat), parseFloat(item.lng)]
+          coordinates: item.coordinates 
         }));
+  
+        console.log("Processed data for brannstasjoner:", processedData);
+        return processedData;
       }
     } catch (error) {
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
       console.error(`Feil ved henting av data fra ${tableName}:`, error); // Log the error
       return [];
     }
-  };
-
-  const fetchLinesForShortestPath = async () => {
-    try {
-      console.log("Fetching lines using pagination...");
-      let allData = [];
-      let start = 0;
-      const chunkSize = 1000; // Fetch 1,000 rows at a time
-  
-      while (true) {
-        const { data, error } = await supabase
-          .from("linesForShortestPath")
-          .select("*")
-          .range(start, start + chunkSize - 1);
-  
-        if (error) {
-          throw new Error(`Error fetching lines: ${error.message}`);
-        }
-  
-        if (!data || data.length === 0) {
-          break; // Exit the loop if no more data is returned
-        }
-  
-        allData = allData.concat(data);
-        start += chunkSize;
-  
-        console.log(`Fetched ${data.length} rows, total: ${allData.length}`);
-      }
-  
-      console.log("All data fetched:", allData);
-  
-      const geoJson = {
-        type: "FeatureCollection",
-        features: allData
-          .filter((item) => item.geom) // Filter out rows with missing geometry
-          .map((item) => ({
-            type: "Feature",
-            geometry: item.geom, // Use the geometry object directly
-            properties: {
-              id: item.id,
-              pointA: item.POINTA, // Use the correct case for keys
-              pointB: item.POINTB,
-              pointC: item.POINTC
-            }
-          }))
-      };
-  
-      console.log("GeoJSON data:", geoJson);
-      return geoJson;
-    } catch (error) {
-      console.error("Error fetching lines:", error);
-      setError(`Error fetching lines: ${error.message}`);
-      return null;
-    }
-  };
-
-  const runShortestPath = async (startPoint, endPoint) => {
-    try {
-      // Fetch the GeoJSON data for the lines
-      const geoJson = await fetchLinesForShortestPath();
-      if (!geoJson) {
-        console.error("No GeoJSON data available for shortest path calculation.");
-        return;
-      }
-
-      // Log the GeoJSON data to verify its structure
-      console.log("GeoJSON being sent to backend:", geoJson);
-  
-      const response = await fetch("http://127.0.0.1:5000/shortestpath", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          start_point: startPoint,
-          end_point: endPoint,
-          line_data: geoJson // Pass the GeoJSON data for the lines
-        })
-      });
-  
-      const data = await response.json();
-      if (data.success) {
-        console.log("Shortest path result:", data.features);
-        visualizeShortestPath(data.features); // Visualize the path on the map
-      } else {
-        console.error("Error running shortest path:", data.error);
-      }
-    } catch (error) {
-      console.error("Error connecting to backend:", error);
-    }
-  };
-
-  const visualizeShortestPath = (features) => {
-    features.forEach((feature) => {
-      try {
-        // Convert WKT to GeoJSON
-        const wkt = feature.geometry;
-        const geoJson = wktToGeoJSON(wkt);
-  
-        console.log("Converted GeoJSON:", geoJson);
-  
-        // Create a polyline from the GeoJSON coordinates
-        const line = L.polyline(
-          geoJson.coordinates.map(([lng, lat]) => [lat, lng]), // Convert to [lat, lng]
-          { color: "red", weight: 5 }
-        ).addTo(mapInstanceRef.current);
-  
-        // Adjust the map view to fit the polyline
-        mapInstanceRef.current.fitBounds(line.getBounds());
-  
-        console.log("Polyline added to the map:", line);
-      } catch (error) {
-        console.error("Error visualizing shortest path:", error);
-      }
-    });
-  };
-
-  // Define the projection for EPSG:3395
-  const epsg3395 = "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs";
-  const epsg4326 = "+proj=longlat +datum=WGS84 +no_defs";
-
-  const wktToGeoJSON = (wkt) => {
-    if (!wkt.startsWith("LineString")) {
-      throw new Error("Unsupported WKT type. Only LineString is supported.");
-    }
-
-    // Extract the coordinates from the WKT string
-    const coordinates = wkt
-      .replace("LineString (", "")
-      .replace(")", "")
-      .split(", ")
-      .map((pair) => {
-        const [x, y] = pair.split(" ").map(Number);
-        // Reproject from EPSG:3395 to EPSG:4326
-        const [lng, lat] = proj4(epsg3395, epsg4326, [x, y]);
-        return [lng, lat];
-      });
-
-    return {
-      type: "LineString",
-      coordinates
-    };
   };
 
   // Håndter endring av datasett
@@ -372,8 +257,7 @@ function App() {
       setError(null);
   
       // Fjern alle eksisterende markører og linjer
-      removeAllMarkers();
-      removeAllPolylnes();
+      removeAllMarkersAndPolylines();
   
       try {
         const config = datasetConfig[selectedDataset];
@@ -444,6 +328,21 @@ function App() {
   
     fetchPostGISData();
   }, [selectedDataset, userPosition]);
+
+  // Visualize selected points
+useEffect(() => {
+  if (startPoint && mapInstanceRef.current) {
+    L.marker([startPoint.lat, startPoint.lng], { color: 'green' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('Start Point');
+  }
+
+  if (endPoint && mapInstanceRef.current) {
+    L.marker([endPoint.lat, endPoint.lng], { color: 'red' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('End Point');
+  }
+}, [startPoint, endPoint]);
 
   // Håndter søkeradius
   /*
@@ -611,17 +510,52 @@ function App() {
             </button>
 
             <button
-            onClick={() =>
-              runShortestPath(
-                "890204.453494,7964767.867410 [EPSG:3395]",
-                "890965.515919,7965532.874908 [EPSG:3395]"
-            )
-          }
-          >
-            Find Shortest Path
-          </button>
-
+              onClick={() =>
+                runShortestPath(
+                  supabase,
+                  "890204.453494,7964767.867410 [EPSG:3395]",
+                  "890965.515919,7965532.874908 [EPSG:3395]",
+                  (features) => visualizeShortestPath(features, mapInstanceRef)
+                )
+              }
+            >
+            Finn korteste vei
+            </button>
           </div>
+
+          <button
+  onClick={() => {
+    pointsRef.current = { startPoint: null, endPoint: null };
+    setStartPoint(null);
+    setEndPoint(null);
+    console.log('Points reset.');
+    removeAllMarkersAndPolylines(); // Clear all markers and lines from the map
+  }}
+  >
+  Nullstill punkter
+  </button>
+
+  <button
+  onClick={() => {
+    if (!startPoint || !endPoint) {
+      console.warn('Both start and end points must be set.');
+      return;
+    }
+
+    const start = `${startPoint.lng},${startPoint.lat} [EPSG:4326]`;
+    const end = `${endPoint.lng},${endPoint.lat} [EPSG:4326]`;
+
+    runShortestPath(
+      supabase,
+      start,
+      end,
+      (features) => visualizeShortestPath(features, mapInstanceRef),
+      mapInstanceRef
+    );
+  }}
+  >
+  Finn kortest vei
+  </button>
 
           <select
             value={selectedDataset}
@@ -631,7 +565,6 @@ function App() {
             <option value="brannstasjoner">Brannstasjoner</option>
             <option value="sykehus">Sykehus</option>
             <option value="politistasjoner">Politistasjoner</option>
-            <option value="linjer">Linjer</option>
           </select>
 
           

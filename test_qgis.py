@@ -4,6 +4,7 @@ from flask_cors import CORS
 from qgis.core import QgsApplication, QgsVectorLayer, QgsFeature, QgsGeometry
 from qgis.analysis import QgsNativeAlgorithms  # Required to register native algorithms
 import processing
+from pyproj import Transformer
 
 # Set QGIS environment variables
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -49,8 +50,12 @@ def shortest_path():
         end_point = data['end_point']
         line_data = data['line_data']  # GeoJSON data for the lines
 
-        # Log the received line_data to verify its structure
-        print("Received line_data:", line_data)
+        # Reproject start_point and end_point to EPSG:3395
+        formatted_start_point = reproject_point_to_epsg3395(start_point)
+        formatted_end_point = reproject_point_to_epsg3395(end_point)
+
+        print("Reprojected Start Point (EPSG:3395):", formatted_start_point)
+        print("Reprojected End Point (EPSG:3395):", formatted_end_point)
 
         # Create a QGIS layer from the GeoJSON data
         layer = QgsVectorLayer("LineString?crs=EPSG:3395", "network", "memory")
@@ -58,8 +63,6 @@ def shortest_path():
 
         for feature in line_data['features']:
             qgs_feature = QgsFeature()
-            
-            # Convert GeoJSON geometry to WKT
             geometry = feature['geometry']
             if geometry['type'] == 'LineString':
                 coordinates = geometry['coordinates']
@@ -67,10 +70,6 @@ def shortest_path():
                 qgs_feature.setGeometry(QgsGeometry.fromWkt(wkt))
             else:
                 raise ValueError(f"Unsupported geometry type: {geometry['type']}")
-            
-            # Log the properties of each feature
-            print("Feature properties:", feature['properties'])
-
             qgs_feature.setAttributes([
                 feature['properties']['id'], 
                 feature['properties']['pointA'], 
@@ -80,6 +79,11 @@ def shortest_path():
             provider.addFeatures([qgs_feature])
 
         print("Line data successfully added to the layer")
+        print("Network CRS:", layer.crs().authid())
+
+        # Add debug logs for snapped points
+        print("Snapped START_POINT WKT:", QgsGeometry.fromWkt(f"POINT ({formatted_start_point.replace(',', ' ')})").asWkt())
+        print("Snapped END_POINT WKT:", QgsGeometry.fromWkt(f"POINT ({formatted_end_point.replace(',', ' ')})").asWkt())
 
         # Define parameters for the shortest path algorithm
         params = {
@@ -92,9 +96,9 @@ def shortest_path():
             'DEFAULT_DIRECTION': 2,
             'SPEED_FIELD': '',
             'DEFAULT_SPEED': 50,
-            'TOLERANCE': 1,
-            'START_POINT': start_point,
-            'END_POINT': end_point,
+            'TOLERANCE': 1,  # Increase tolerance
+            'START_POINT': formatted_start_point,
+            'END_POINT': formatted_end_point,
             'OUTPUT': 'TEMPORARY_OUTPUT'
         }
 
@@ -117,6 +121,22 @@ def shortest_path():
     except Exception as e:
         print("Error:", str(e))
         return jsonify({'success': False, 'error': str(e)})
+    
+# Initialize a transformer for EPSG:4326 to EPSG:3395
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:3395", always_xy=True)
+
+def reproject_point_to_epsg3395(point):
+    if isinstance(point, str):
+        # Parse the point string (e.g., "7.998127912203988,58.16109290942553")
+        lng, lat = map(float, point.split(","))
+    elif isinstance(point, dict) and 'lat' in point and 'lng' in point:
+        lng, lat = point['lng'], point['lat']
+    else:
+        raise ValueError(f"Invalid point format: {point}")
+
+    # Reproject the point to EPSG:3395
+    x, y = transformer.transform(lng, lat)
+    return f"{x},{y}"
     
 
 # Exit QGIS application when the script stops
