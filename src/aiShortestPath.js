@@ -29,6 +29,7 @@ export const wktToGeoJSON = (wkt) => {
   };
 };
 
+//Funksjonen for å hente linjer fra databasen
 export const fetchLinesForShortestPath = async (supabase) => {
   try {
     console.log("Fetching lines using pagination...");

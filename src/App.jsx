@@ -508,19 +508,6 @@ useEffect(() => {
             >
               Flyfoto
             </button>
-
-            <button
-              onClick={() =>
-                runShortestPath(
-                  supabase,
-                  "890204.453494,7964767.867410 [EPSG:3395]",
-                  "890965.515919,7965532.874908 [EPSG:3395]",
-                  (features) => visualizeShortestPath(features, mapInstanceRef)
-                )
-              }
-            >
-            Finn korteste vei
-            </button>
           </div>
 
           <button
