@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from './config/supabase';
+import proj4 from "proj4";
 
 function App() {
   const mapRef = useRef(null);
@@ -220,67 +221,146 @@ function App() {
     }
   };
 
-  const runShortestPath = async (startPoint, endPoint) => {
+  const fetchLinesForShortestPath = async () => {
     try {
-      // Fetch line data from the database
-      const lineData = await fetchDataDirectly('linesForShortestPath', 'lines');
-      if (!lineData || lineData.length === 0) {
-        console.error('No line data found in the database.');
-        return;
+      console.log("Fetching lines using pagination...");
+      let allData = [];
+      let start = 0;
+      const chunkSize = 1000; // Fetch 1,000 rows at a time
+  
+      while (true) {
+        const { data, error } = await supabase
+          .from("linesForShortestPath")
+          .select("*")
+          .range(start, start + chunkSize - 1);
+  
+        if (error) {
+          throw new Error(`Error fetching lines: ${error.message}`);
+        }
+  
+        if (!data || data.length === 0) {
+          break; // Exit the loop if no more data is returned
+        }
+  
+        allData = allData.concat(data);
+        start += chunkSize;
+  
+        console.log(`Fetched ${data.length} rows, total: ${allData.length}`);
       }
   
-      // Prepare the line data for QGIS
-      const lineFeatures = lineData.map((line) => ({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: line.coordinates, // Ensure coordinates are in [lng, lat] format
-        },
-        properties: {
-          id: line.id,
-          name: line.name || 'Unnamed',
-        },
-      }));
+      console.log("All data fetched:", allData);
   
       const geoJson = {
-        type: 'FeatureCollection',
-        features: lineFeatures,
+        type: "FeatureCollection",
+        features: allData
+          .filter((item) => item.geom) // Filter out rows with missing geometry
+          .map((item) => ({
+            type: "Feature",
+            geometry: item.geom, // Use the geometry object directly
+            properties: {
+              id: item.id,
+              pointA: item.POINTA, // Use the correct case for keys
+              pointB: item.POINTB,
+              pointC: item.POINTC
+            }
+          }))
       };
   
-      // Send the line data and points to the backend for processing
-      const response = await fetch('http://localhost:5000/shortestpath', {
-        method: 'POST',
+      console.log("GeoJSON data:", geoJson);
+      return geoJson;
+    } catch (error) {
+      console.error("Error fetching lines:", error);
+      setError(`Error fetching lines: ${error.message}`);
+      return null;
+    }
+  };
+
+  const runShortestPath = async (startPoint, endPoint) => {
+    try {
+      // Fetch the GeoJSON data for the lines
+      const geoJson = await fetchLinesForShortestPath();
+      if (!geoJson) {
+        console.error("No GeoJSON data available for shortest path calculation.");
+        return;
+      }
+
+      // Log the GeoJSON data to verify its structure
+      console.log("GeoJSON being sent to backend:", geoJson);
+  
+      const response = await fetch("http://127.0.0.1:5000/shortestpath", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           start_point: startPoint,
           end_point: endPoint,
-          line_data: geoJson, // Pass the line data as GeoJSON
-        }),
+          line_data: geoJson // Pass the GeoJSON data for the lines
+        })
       });
   
       const data = await response.json();
       if (data.success) {
-        console.log('Shortest path result:', data.features);
-  
-        // Visualize the shortest path on the map
-        visualizeShortestPath(data.features);
+        console.log("Shortest path result:", data.features);
+        visualizeShortestPath(data.features); // Visualize the path on the map
       } else {
-        console.error('Error running shortest path:', data.error);
+        console.error("Error running shortest path:", data.error);
       }
     } catch (error) {
-      console.error('Error connecting to backend:', error);
+      console.error("Error connecting to backend:", error);
     }
   };
 
   const visualizeShortestPath = (features) => {
     features.forEach((feature) => {
-      const line = L.polyline(
-        L.GeoJSON.coordsToLatLngs(feature.geometry.coordinates), // Convert WKT to LatLngs
-        { color: 'red', weight: 3 }
-      ).addTo(mapInstanceRef.current);
+      try {
+        // Convert WKT to GeoJSON
+        const wkt = feature.geometry;
+        const geoJson = wktToGeoJSON(wkt);
+  
+        console.log("Converted GeoJSON:", geoJson);
+  
+        // Create a polyline from the GeoJSON coordinates
+        const line = L.polyline(
+          geoJson.coordinates.map(([lng, lat]) => [lat, lng]), // Convert to [lat, lng]
+          { color: "red", weight: 5 }
+        ).addTo(mapInstanceRef.current);
+  
+        // Adjust the map view to fit the polyline
+        mapInstanceRef.current.fitBounds(line.getBounds());
+  
+        console.log("Polyline added to the map:", line);
+      } catch (error) {
+        console.error("Error visualizing shortest path:", error);
+      }
     });
+  };
+
+  // Define the projection for EPSG:3395
+  const epsg3395 = "+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs";
+  const epsg4326 = "+proj=longlat +datum=WGS84 +no_defs";
+
+  const wktToGeoJSON = (wkt) => {
+    if (!wkt.startsWith("LineString")) {
+      throw new Error("Unsupported WKT type. Only LineString is supported.");
+    }
+
+    // Extract the coordinates from the WKT string
+    const coordinates = wkt
+      .replace("LineString (", "")
+      .replace(")", "")
+      .split(", ")
+      .map((pair) => {
+        const [x, y] = pair.split(" ").map(Number);
+        // Reproject from EPSG:3395 to EPSG:4326
+        const [lng, lat] = proj4(epsg3395, epsg4326, [x, y]);
+        return [lng, lat];
+      });
+
+    return {
+      type: "LineString",
+      coordinates
+    };
   };
 
   // Håndter endring av datasett
@@ -531,13 +611,15 @@ function App() {
             </button>
 
             <button
-            onClick={() => runShortestPath(
-              '890204.453494,7964767.867410 [EPSG:3395]',
-               '890965.515919,7965532.874908 [EPSG:3395]'
-            )}
-            >
-              Find Shortest Path
-            </button>
+            onClick={() =>
+              runShortestPath(
+                "890204.453494,7964767.867410 [EPSG:3395]",
+                "890965.515919,7965532.874908 [EPSG:3395]"
+            )
+          }
+          >
+            Find Shortest Path
+          </button>
 
           </div>
 

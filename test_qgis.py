@@ -49,23 +49,37 @@ def shortest_path():
         end_point = data['end_point']
         line_data = data['line_data']  # GeoJSON data for the lines
 
+        # Log the received line_data to verify its structure
+        print("Received line_data:", line_data)
+
         # Create a QGIS layer from the GeoJSON data
         layer = QgsVectorLayer("LineString?crs=EPSG:3395", "network", "memory")
         provider = layer.dataProvider()
 
         for feature in line_data['features']:
             qgs_feature = QgsFeature()
-            qgs_feature.setGeometry(QgsGeometry.fromWkt(feature['geometry']))
-            qgs_feature.setAttributes([feature['properties']['id'], feature['properties']['name']])
+            
+            # Convert GeoJSON geometry to WKT
+            geometry = feature['geometry']
+            if geometry['type'] == 'LineString':
+                coordinates = geometry['coordinates']
+                wkt = f"LINESTRING ({', '.join([f'{x[0]} {x[1]}' for x in coordinates])})"
+                qgs_feature.setGeometry(QgsGeometry.fromWkt(wkt))
+            else:
+                raise ValueError(f"Unsupported geometry type: {geometry['type']}")
+            
+            # Log the properties of each feature
+            print("Feature properties:", feature['properties'])
+
+            qgs_feature.setAttributes([
+                feature['properties']['id'], 
+                feature['properties']['pointA'], 
+                feature['properties']['pointB'], 
+                feature['properties']['pointC']
+            ])
             provider.addFeatures([qgs_feature])
 
-        print("Line data features:")
-        for feature in line_data['features']:
-            print("Geometry:", feature['geometry'])
-            print("Properties:", feature['properties'])
-
-        print("Start point:", start_point)
-        print("End point:", end_point)
+        print("Line data successfully added to the layer")
 
         # Define parameters for the shortest path algorithm
         params = {
@@ -78,13 +92,14 @@ def shortest_path():
             'DEFAULT_DIRECTION': 2,
             'SPEED_FIELD': '',
             'DEFAULT_SPEED': 50,
-            'TOLERANCE': 10, # Hvor mye toleranse det er for å finne nærmeste linje
+            'TOLERANCE': 1,
             'START_POINT': start_point,
             'END_POINT': end_point,
             'OUTPUT': 'TEMPORARY_OUTPUT'
         }
 
         # Run the shortest path algorithm
+        print("Running shortest path algorithm...")
         result = processing.run("native:shortestpathpointtopoint", params)
         output_layer = result['OUTPUT']
 
@@ -96,10 +111,13 @@ def shortest_path():
                 'attributes': feature.attributes()
             })
 
+        print("Shortest path calculation successful")
         return jsonify({'success': True, 'features': features})
 
     except Exception as e:
+        print("Error:", str(e))
         return jsonify({'success': False, 'error': str(e)})
+    
 
 # Exit QGIS application when the script stops
 @app.route('/shutdown', methods=['POST'])
