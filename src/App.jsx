@@ -4,7 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet-draw'
 import { supabase } from './config/supabase';
-import {runShortestPath, visualizeShortestPath } from "./aiShortestPath";
+import { runShortestPath, visualizeShortestPath } from "./aiShortestPath";
 
 function App() {
   const mapRef = useRef(null);
@@ -533,9 +533,8 @@ useEffect(() => {
     const end = `${endPoint.lng},${endPoint.lat} [EPSG:4326]`;
 
     runShortestPath(
-      supabase,
-      start,
-      end,
+      startPoint,
+      endPoint,
       (features) => visualizeShortestPath(features, mapInstanceRef),
       mapInstanceRef
     );

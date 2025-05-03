@@ -29,104 +29,23 @@ export const wktToGeoJSON = (wkt) => {
   };
 };
 
-//Funksjonen for å hente linjer fra databasen
-export const fetchLinesForShortestPath = async (supabase) => {
+export const runShortestPath = async (startPoint, endPoint, visualizeShortestPath, mapInstanceRef) => {
   try {
-    console.log("Fetching lines using pagination...");
-    let allData = [];
-    let start = 0;
-    const chunkSize = 1000; // Fetch 1,000 rows at a time
-
-    while (true) {
-      const { data, error } = await supabase
-        .from("linesForShortestPath")
-        .select("*")
-        .range(start, start + chunkSize - 1);
-
-      if (error) {
-        throw new Error(`Error fetching lines: ${error.message}`);
-      }
-
-      if (!data || data.length === 0) {
-        break; // Exit the loop if no more data is returned
-      }
-
-      allData = allData.concat(data);
-      start += chunkSize;
-
-      console.log(`Fetched ${data.length} rows, total: ${allData.length}`);
-    }
-
-    console.log("All data fetched:", allData);
-
-    const geoJson = {
-      type: "FeatureCollection",
-      features: allData
-        .filter((item) => item.geom) // Filter out rows with missing geometry
-        .map((item) => ({
-          type: "Feature",
-          geometry: item.geom, // Use the geometry object directly
-          properties: {
-            id: item.id,
-            pointA: item.POINTA, // Use the correct case for keys
-            pointB: item.POINTB,
-            pointC: item.POINTC
-          }
-        }))
-    };
-
-    console.log("GeoJSON data:", geoJson);
-    return geoJson;
-  } catch (error) {
-    console.error("Error fetching lines:", error);
-    throw error;
-  }
-};
-
-export const runShortestPath = async (supabase, startPoint, endPoint, visualizeShortestPath, mapInstanceRef) => {
-  try {
-    // Parse startPoint and endPoint if they are strings
-    const parsePoint = (point) => {
-      if (typeof point === 'string') {
-        const [lng, lat] = point.split(',').map((coord) => parseFloat(coord));
-        return { lat, lng };
-      }
-      return point; // If already an object, return as is
-    };
-
-    const parsedStartPoint = parsePoint(startPoint);
-    const parsedEndPoint = parsePoint(endPoint);
-
-    // Fetch the GeoJSON data for the lines
-    const geoJson = await fetchLinesForShortestPath(supabase);
-    if (!geoJson) {
-      console.error("No GeoJSON data available for shortest path calculation.");
-      return;
-    }
-
-    // Snap the start and end points to the nearest line
-    const snappedStartPoint = snapToNearestLine(parsedStartPoint, geoJson, mapInstanceRef);
-    const snappedEndPoint = snapToNearestLine(parsedEndPoint, geoJson, mapInstanceRef);
-
-    console.log("Snapped Start Point:", snappedStartPoint);
-    console.log("Snapped End Point:", snappedEndPoint);
-
     const response = await fetch("http://127.0.0.1:5000/shortestpath", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        start_point: snappedStartPoint,
-        end_point: snappedEndPoint,
-        line_data: geoJson // Pass the GeoJSON data for the lines
+        start_point: startPoint,
+        end_point: endPoint
       })
     });
 
     const data = await response.json();
     if (data.success) {
       console.log("Shortest path result:", data.features);
-      visualizeShortestPath(data.features); // Visualize the path on the map
+      visualizeShortestPath(data.features, mapInstanceRef); // Visualize the path on the map
     } else {
       console.error("Error running shortest path:", data.error);
     }
