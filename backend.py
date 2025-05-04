@@ -161,23 +161,42 @@ def reproject_point_to_epsg3395(point):
     return f"{x},{y}"
 
 def snap_to_nearest_line(point, lines):
-    from shapely.geometry import Point, LineString
+    from shapely.geometry import Point, LineString, MultiLineString
 
     point_geom = Point(point['lng'], point['lat'])
     nearest_line = None
     shortest_distance = float('inf')
 
+    print(f"Snapping point: {point}")
+
     for line in lines:
-        line_geom = LineString(line['geometry']['coordinates'])
-        distance = point_geom.distance(line_geom)
-        if distance < shortest_distance:
-            shortest_distance = distance
-            nearest_line = line_geom
+        try:
+            geometry = line['geometry']
+            if geometry['type'] == 'LineString':
+                line_geom = LineString(geometry['coordinates'])
+                distance = point_geom.distance(line_geom)
+                if distance < shortest_distance:
+                    shortest_distance = distance
+                    nearest_line = line_geom
+            elif geometry['type'] == 'MultiLineString':
+                for line_coords in geometry['coordinates']:
+                    line_geom = LineString(line_coords)
+                    distance = point_geom.distance(line_geom)
+                    if distance < shortest_distance:
+                        shortest_distance = distance
+                        nearest_line = line_geom
+            else:
+                print(f"Unsupported geometry type: {geometry['type']}")
+        except Exception as e:
+            print(f"Error processing line: {line['geometry']}, Error: {e}")
+            continue
 
     if nearest_line:
         snapped_point = nearest_line.interpolate(nearest_line.project(point_geom))
+        print(f"Snapped point: {snapped_point}, Distance: {shortest_distance}")
         return {'lat': snapped_point.y, 'lng': snapped_point.x}
     else:
+        print("No nearest line found for point:", point)
         return point  # Return the original point if no line is found
 
 # Funksjonen for å kalkulere shortestpathAI
@@ -251,8 +270,21 @@ def shortest_path():
                     coordinates = geometry['coordinates']
                     wkt = f"LINESTRING ({', '.join([f'{x[0]} {x[1]}' for x in coordinates])})"
                     qgs_feature.setGeometry(QgsGeometry.fromWkt(wkt))
+                elif geometry['type'] == 'MultiLineString':
+                    for line in geometry['coordinates']:
+                        wkt = f"LINESTRING ({', '.join([f'{x[0]} {x[1]}' for x in line])})"
+                        qgs_feature = QgsFeature()
+                        qgs_feature.setGeometry(QgsGeometry.fromWkt(wkt))
+                        qgs_feature.setAttributes([
+                            feature['properties']['id'], 
+                            feature['properties']['pointA'], 
+                            feature['properties']['pointB'], 
+                            feature['properties']['pointC']
+                        ])
+                        provider.addFeatures([qgs_feature])
                 else:
                     raise ValueError(f"Unsupported geometry type: {geometry['type']}")
+                
                 qgs_feature.setAttributes([
                     feature['properties']['id'], 
                     feature['properties']['pointA'], 
