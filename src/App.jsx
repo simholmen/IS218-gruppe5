@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-draw/dist/leaflet.draw.css';
+import 'leaflet-draw'
 import { supabase } from './config/supabase';
+import { runShortestPath, visualizeShortestPath } from "./aiShortestPath";
+import { calculateDistanceBetweenTwoPoints, drawLineBetweenTwoPoints, drawRoadRoute } from './roadroute';
+
 
 function App() {
   const mapRef = useRef(null);
@@ -14,6 +19,11 @@ function App() {
   const [pointCount, setPointCount] = useState(0);
   const [error, setError] = useState(null);
   const [userPosition, setUserPosition] = useState(null);
+  const [useRoadDistance, setUseRoadDistance] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const [endPoint, setEndPoint] = useState(null);
+  const pointsRef = useRef({ startPoint: null, endPoint: null });
+  const isFetchingRef = useRef(false);
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -24,15 +34,18 @@ function App() {
   const datasetConfig = {
     'brannstasjoner': { 
       table: 'NyBrannstasjoner', 
-      nameColumn: 'brannstasjon'
+      nameColumn: 'brannstasjon',
+      type: 'points' 
     },
     'sykehus': { 
       table: 'sykehus', 
-      nameColumn: 'navn'
+      nameColumn: 'navn',
+      type: 'points' 
     },
     'politistasjoner': { 
       table: 'politistasjon', 
-      nameColumn: 'name'
+      nameColumn: 'name',
+      type: 'points' 
     }
   };
 
@@ -103,11 +116,46 @@ function App() {
         flyFotoLayerRef.current.addTo(mapInstanceRef.current);
       }
 
-      // Legg til klikkhåndtering
-      mapInstanceRef.current.on('click', (e) => {
-        const { lat, lng } = e.latlng;
-        setSelectedPoint({ lat, lng });
-      });
+      // Add draw control
+    const drawControl = new L.Control.Draw({
+      draw: {
+        marker: true, // Enable marker placement
+        polyline: true, // Enable line drawing
+        polygon: false, // Disable polygon drawing
+        rectangle: false, // Disable rectangle drawing
+        circle: false, // Disable circle drawing
+      },
+      edit: {
+        featureGroup: new L.FeatureGroup().addTo(mapInstanceRef.current), // Layer for editable features
+      },
+    });
+
+    mapInstanceRef.current.addControl(drawControl);
+
+    mapInstanceRef.current.on(L.Draw.Event.CREATED, (e) => {
+      const layer = e.layer;
+    
+      if (e.layerType === 'marker') {
+        const { lat, lng } = layer.getLatLng();
+    
+        if (!pointsRef.current.startPoint) {
+          pointsRef.current.startPoint = { lat, lng };
+          setStartPoint({ lat, lng });
+          console.log('Start point set:', { lat, lng });
+          layer.bindPopup('Start Point').openPopup();
+        } else if (!pointsRef.current.endPoint) {
+          pointsRef.current.endPoint = { lat, lng };
+          setEndPoint({ lat, lng });
+          console.log('End point set:', { lat, lng });
+          layer.bindPopup('End Point').openPopup();
+        } else {
+          console.warn('Both points are already set. Reset to select new points.');
+        }
+      }
+    
+      // Add the drawn layer to the map
+      layer.addTo(mapInstanceRef.current);
+    });
     }
 
     // Gjør kartet responsive
@@ -148,72 +196,55 @@ function App() {
     }
   }, [activeLayer]);
 
-  // Funksjon for å fjerne alle markører
-  const removeAllMarkers = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Marker) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };  
-
-  // Funksjon for å fjerne alle linjer
-  const removeAllPolylnes = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Polyline) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };
+  // Funksjon for å fjerne alle markører og linjer
+const removeAllMarkersAndPolylines = () => {
+  if (mapInstanceRef.current) {
+    mapInstanceRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+        mapInstanceRef.current.removeLayer(layer);
+      }
+    });
+  }
+};
 
   // Hent data fra Supabase
-  const fetchDataDirectly = async (tableName) => {
+  const fetchDataDirectly = async (tableName, type) => {
     try {
       console.log(`Henter data fra ${tableName}...`);
-      const { data, error } = await supabase.rpc('get_points', {
-        table_name: tableName
+      const { data, error } = await supabase.rpc('get_pointstest', {
+        table_name: tableName,
       });
   
       if (error) {
         throw new Error(`Feil ved henting av data fra ${tableName}: ${error.message}`);
       }
-      
+  
       if (!data || data.length === 0) {
+        console.log(`Ingen data funnet i tabellen ${tableName}.`);
         return [];
       }
-      
-      // Konverter og valider hvert datapunkt
-      const processedData = [];
-      data.forEach((item) => {
-        console.log("Legger til markør:", item);
-        try {
-          const lat = parseFloat(item.lat);
-          const lng = parseFloat(item.lng);
-          
-          if (isNaN(lat) || isNaN(lng)) {
-            return; 
-          }
-          
-          const name = item.name || 'Ukjent';
-          
-          processedData.push({
-            id: item.id,
-            name: name,
-            adresse: '',
-            coordinates: [lat, lng]
-          });
-        } catch (itemError) {
-          console.error('Feil ved prosessering av punkt:', itemError);
-        }
-      });
-      console.log(`Data mottatt fra tabellen ${tableName}:`, data);
-
-      return processedData;
+  
+      console.log(`Data hentet fra ${tableName}:`, data);
+  
+      if (type === 'lines') {
+        return data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          coordinates: item.coordinates.coordinates,
+        }));
+      } else {
+        const processedData = data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          adresse: '',
+          coordinates: item.coordinates,
+        }));
+  
+        console.log("Processed data for brannstasjoner:", processedData);
+        return processedData;
+      }
     } catch (error) {
+      console.error(`Feil ved henting av data fra ${tableName}:`, error);
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
       return [];
     }
@@ -222,106 +253,131 @@ function App() {
   // Håndter endring av datasett
   useEffect(() => {
     const fetchPostGISData = async () => {
+      if (isFetchingRef.current) return; // Passer på at den bare fetcher data 1 gang
+      isFetchingRef.current = true;
+  
       if (!mapInstanceRef.current) return;
-      
+  
       setLoading(true);
       setError(null);
-      
+  
       // Fjern alle eksisterende markører og linjer
-      removeAllMarkers();
-      removeAllPolylnes();
-      
+      removeAllMarkersAndPolylines();
+  
       try {
         const config = datasetConfig[selectedDataset];
         if (!config) {
           throw new Error(`Ugyldig datasett valgt: ${selectedDataset}`);
         }
-        
+  
         // Hent data fra riktig tabell via RPC
-        const items = await fetchDataDirectly(config.table);
-        
+        const items = await fetchDataDirectly(config.table, config.type);
+  
         if (!items || items.length === 0) {
           setPointCount(0);
           setLoading(false);
           return;
         }
-        
-        // Oppdater antall punkter som vises
+  
         setPointCount(items.length);
-        
-        // Legg til markører på kartet
-        const markers = [];
-        
-        items.forEach((item) => {
-          try {
-            const [lat, lng] = item.coordinates;
-            
-            if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-              return;
+  
+        // Add points or lines to the map
+        if (config.type === 'lines') {
+          items.forEach((item) => {
+            try {
+              const transformedCoordinates = item.coordinates.map(([lng, lat]) => [lat, lng]);
+              const line = L.polyline(transformedCoordinates, {
+                color: 'blue',
+                weight: 1,
+              }).addTo(mapInstanceRef.current);
+              line.bindPopup(`<strong>${item.name}</strong>`);
+            } catch (error) {
+              console.error('Feil ved opprettelse av linje:', error);
             }
-            
-            // Opprett markør
-            const marker = L.marker([lat, lng]);
-            
-            // Legg til popup
-            const popupContent = `
-              <div>
-                <strong>${item.name}</strong>
-                ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
-              </div>
-            `;
-            
-            marker.bindPopup(popupContent);
-            marker.addTo(mapInstanceRef.current);
-            markers.push(marker);
-          } catch (error) {
-            console.error('Feil ved opprettelse av markør:', error);
-          }
-        });
-        
-        // Zoom til markørene
-        if (markers.length > 0) {
-          try {
-            // Opprett en featureGroup for å finne bounds
-            const tempGroup = L.featureGroup(markers);
-            const bounds = tempGroup.getBounds();
-            
-            if (bounds && bounds.isValid()) {
-              mapInstanceRef.current.fitBounds(bounds, {
-                padding: [50, 50],
-                maxZoom: 13,
-                animate: true
-              });
+          });
+        } else {
+          items.forEach((item) => {
+            try {
+              const [lat, lng] = item.coordinates;
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+  
+              const marker = L.marker([lat, lng]);
+              const popupContent = `
+                <div>
+                  <strong>${item.name}</strong>
+                  ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
+                </div>
+              `;
+              marker.bindPopup(popupContent);
+              marker.addTo(mapInstanceRef.current);
+            } catch (error) {
+              console.error('Feil ved opprettelse av markør:', error);
             }
-          } catch (e) {
-            console.error('Feil ved zoom til data:', e);
-          }
+          });
         }
-
-        if (!userPosition) {
-          console.warn("User position is not available.");
+  
+        // Find the closest marker
+        const result = await findClosestMarker(items, useRoadDistance);
+        if (!result || !result.closestMarker) {
+          console.warn("No closest marker found");
           return;
         }
-        let closestMarker = findClosestMarker(items);
-        let line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        let distance = calculateDistanceBetweenTwoPoints(userPosition, closestMarker.coordinates);
-        const distancePopup = `
-          <div>
-            <strong>${Math.round(distance)}m</strong>
-          </div>
-        `;
-        line.bindPopup(distancePopup);
-
+  
+        const { closestMarker, shortestDistance } = result;
+        if (!closestMarker || !closestMarker.coordinates || closestMarker.coordinates.length !== 2) {
+          console.error("Invalid closest marker or coordinates:", closestMarker);
+          return;
+        }
+  
+        let line;
+        if (useRoadDistance && closestMarker.routeGeometry) {
+          if (mapInstanceRef.current) {
+            line = drawRoadRoute(closestMarker.routeGeometry, mapInstanceRef.current, 'blue');
+          } else {
+            console.error('Map instance is not initialized.');
+          }
+        } else {
+          if (mapInstanceRef.current) {
+            line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates, mapInstanceRef.current);
+          } else {
+            console.error('Map instance is not initialized.');
+          }
+        }
+  
+        if (line) {
+          const distancePopup = `
+            <div>
+              <strong>${Math.round(shortestDistance)}m</strong>
+            </div>
+          `;
+          line.bindPopup(distancePopup);
+        }
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
         setError(`Feil ved prosessering av data: ${error.message}`);
       } finally {
         setLoading(false);
+        isFetchingRef.current = false; // Reset the flag
       }
     };
-    
+  
     fetchPostGISData();
   }, [selectedDataset, userPosition]);
+
+  // Visualize selected points
+useEffect(() => {
+  if (startPoint && mapInstanceRef.current) {
+    L.marker([startPoint.lat, startPoint.lng], { color: 'green' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('Start Point');
+  }
+
+  if (endPoint && mapInstanceRef.current) {
+    L.marker([endPoint.lat, endPoint.lng], { color: 'red' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('End Point');
+  }
+}, [startPoint, endPoint]);
 
   // Håndter søkeradius
   /*
@@ -360,14 +416,15 @@ function App() {
       console.error("Invalid position data received:", position);
       return;
     }
-    
+  
     const { latitude, longitude } = position.coords;
     if (isNaN(latitude) || isNaN(longitude)) {
       console.error("Invalid GPS coordinates received:", latitude, longitude);
       return;
     }
-
+  
     const newPosition = L.latLng(latitude, longitude);
+    setUserPosition(newPosition);
 
     // Hvis markør allerede finnes, oppdater posisjonen, ellers opprett ny
     if (userMarker) {
@@ -384,59 +441,169 @@ function App() {
     setUserPosition(newPosition); // Oppdater state
   }
 
-  // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
-  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
-    if (!pointA || !pointB) {
-      console.error("Invalid points for distance calculation:", pointA, pointB);
-      return Infinity; // Return a high value to avoid incorrect comparisons
+
+
+  // Add this function to calculate road distances using OpenRouteService
+  async function findClosestByRoad(userCoords, items) {
+    // Add pre-filtering to avoid excessive API calls
+    // Only try to calculate road distance for items within a reasonable air distance
+    const MAX_AIR_DISTANCE = 20000; // 20km max air distance to even try road calculation
+    
+    // Pre-filter items to avoid unnecessary API calls
+    const closeItems = items.filter(item => {
+      if (!item.coordinates || item.coordinates.length !== 2) return false;
+      
+      // Calculate air distance first
+      const airDistance = calculateDistanceBetweenTwoPoints(
+        userCoords, 
+        [item.coordinates[0], item.coordinates[1]]
+      );
+      
+      // Only process items within reasonable distance
+      return airDistance < MAX_AIR_DISTANCE;
+    });
+    
+    console.log(`Filtered from ${items.length} to ${closeItems.length} items within ${MAX_AIR_DISTANCE/1000}km air distance`);
+    
+    // Add delay between API calls to avoid rate limiting
+    let shortestDistance = Infinity;
+    let closestMarker = null;
+    
+    const apikey = import.meta.env.VITE_OPENROUTESERVICE_API_KEY;
+    if (!apikey) {
+      console.error("API key is missing. Please check your .env file.");
+      return { closestMarker: null, shortestDistance: Infinity };
+    } else {
+      // Log a masked version for debugging (only showing first few chars)
+      console.log(`Using API key: ${apikey.substring(0, 4)}...`);
     }
-    try {
-      let distance = pointA.distanceTo(pointB);
-      return distance;
+
+    for (const item of closeItems) {
+      if (!item.coordinates || item.coordinates.length !== 2) {
+        console.error("Invalid coordinates for item:", item);
+        continue;
+      }
+      
+      const destCoords = [item.coordinates[1], item.coordinates[0]]; // Ensure [lng, lat]
+
+      try {
+        // Instead of using CORS-Anywhere:
+        console.log("Sending request with coordinates:", [
+          [userCoords.lng, userCoords.lat],
+          [destCoords[0], destCoords[1]]
+        ]);
+        
+        const response = await fetch('/api/v2/directions/driving-car/geojson', {
+          method: 'POST',
+          headers: {
+            'Authorization': apikey,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json, application/geo+json, application/gpx+xml',
+            'Origin': window.location.origin
+          },
+          body: JSON.stringify({
+            coordinates: [
+              [parseFloat(userCoords.lng), parseFloat(userCoords.lat)],
+              [parseFloat(destCoords[0]), parseFloat(destCoords[1])],
+            ],
+            preference: "shortest",
+            units: "m",
+            language: "en-us",
+            format: "geojson"
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`API error (${response.status}): ${response.statusText}`, errorText);
+          continue;
+        }
+
+        const data = await response.json();
+        console.log("API response:", data); // Debugging log
+
+        // Add error checking before accessing nested properties
+        if (data && data.features && data.features.length > 0 && 
+            data.features[0].properties && data.features[0].properties.summary) {
+          const distance = data.features[0].properties.summary.distance; // meters
+          console.log(`Road distance to ${item.name}: ${distance} meters`);
+          
+          // Store the route geometry for the closest path
+          if (distance < shortestDistance) {
+            shortestDistance = distance;
+            closestMarker = item;
+            // Store the route geometry for drawing later
+            closestMarker.routeGeometry = data.features[0].geometry.coordinates;
+          }
+        } else {
+          console.error("Invalid API response format:", data);
+        }
+      } catch (error) {
+        console.error('Error fetching road distance:', error);
+        // Continue with next item
+      }
     }
-    catch (e) {
-      console.error('Feil ved lesing av posisjon:', e);
-      return Infinity;
+
+    if (shortestDistance === Infinity || !closestMarker) {
+      console.log("No valid road distances calculated, returning null");
+      return { closestMarker: null, shortestDistance: Infinity };
     }
+
+    return { closestMarker, shortestDistance };
   }
 
-  function drawLineBetweenTwoPoints(pointA, pointB) {
-    try {
-      let line = L.polyline([pointA, pointB], {
-        color: 'red',
-        weight: 5,
-      }).addTo(mapInstanceRef.current);
-      return line;
-    }
-    catch (e) {
-      console.error('Feil ved lesing av posisjon:', e);
-    }
-  }
+
 
   // Funksjon for å finne nærmeste valgte type marker
-  function findClosestMarker(items) {
+  async function findClosestMarker(items, useRoadDistance = false) {
     if (!userPosition) {
       console.warn("User position is not set.");
-      return null;
+      return { closestMarker: null, shortestDistance: Infinity };
     }
-
+    
+    if (useRoadDistance) {
+      console.log("Calculating road distance...");
+      try {
+        // Await the result
+        const roadResult = await findClosestByRoad(userPosition, items);
+        if (roadResult && roadResult.closestMarker) {
+          console.log("Successfully found closest by road");
+          return roadResult;
+        }
+        console.warn("Road distance calculation didn't find a result, falling back to air distance");
+      } catch (error) {
+        console.error("Road distance calculation failed, falling back to air distance:", error);
+      }
+    }
+    
+    // Calculate air distance as fallback
+    console.log("Calculating air distance...");
     console.log("GA:")
     console.log(items)
-
     let shortest = Infinity;
     let marker = null;
+
     items.forEach((item) => {
-      let coordinate = item.coordinates;
-      let distance = calculateDistanceBetweenTwoPoints(userPosition, coordinate);
+      if (!item.coordinates || item.coordinates.length !== 2) {
+        console.error("Invalid coordinates for item:", item);
+        return;
+      }
+
+      let distance = calculateDistanceBetweenTwoPoints(userPosition, item.coordinates);
       if (distance < shortest) {
         shortest = distance;
         marker = item;
       }
     });
-    return marker;
+
+    if (!marker) {
+      console.error("No valid marker found.");
+    }
+    return { closestMarker: marker, shortestDistance: shortest };
   }
 
   useEffect(() => {
+
     // Sette opp geolokasjon som oppdateres hvert 5. sekund
     if ("geolocation" in navigator) {
       navigator.geolocation.watchPosition(updateUserPosition, 
@@ -489,6 +656,39 @@ function App() {
             </button>
           </div>
 
+          <button
+  onClick={() => {
+    pointsRef.current = { startPoint: null, endPoint: null };
+    setStartPoint(null);
+    setEndPoint(null);
+    console.log('Points reset.');
+    removeAllMarkersAndPolylines(); // Clear all markers and lines from the map
+  }}
+  >
+  Nullstill punkter
+  </button>
+
+  <button
+  onClick={() => {
+    if (!startPoint || !endPoint) {
+      console.warn('Both start and end points must be set.');
+      return;
+    }
+
+    const start = `${startPoint.lng},${startPoint.lat} [EPSG:4326]`;
+    const end = `${endPoint.lng},${endPoint.lat} [EPSG:4326]`;
+
+    runShortestPath(
+      startPoint,
+      endPoint,
+      (features) => visualizeShortestPath(features, mapInstanceRef),
+      mapInstanceRef
+    );
+  }}
+  >
+  Finn kortest vei
+  </button>
+
           <select
             value={selectedDataset}
             onChange={(e) => setSelectedDataset(e.target.value)}
@@ -498,6 +698,21 @@ function App() {
             <option value="sykehus">Sykehus</option>
             <option value="politistasjoner">Politistasjoner</option>
           </select>
+
+
+             {/* Checkbox for toggling distance type */}
+          <div>
+            <label style={{ color: 'white' }}>
+              <input
+                type="checkbox"
+                checked={useRoadDistance}
+                onChange={(e) => setUseRoadDistance(e.target.checked)}
+                style={{ marginRight: '0.5rem' }}
+              />
+              Bruk veidistanse
+            </label>
+          </div>
+
 
           
           {/* <div style={{ flex: 1 }}>

@@ -1,0 +1,7 @@
+Flask==2.3.2
+Flask-Cors==3.0.10
+psycopg2-binary==2.9.6
+requests==2.31.0
+python-dotenv==1.0.0
+pyproj==3.6.0
+Shapely==2.0.1
