@@ -10,16 +10,19 @@ from qgis.analysis import QgsNativeAlgorithms
 from pyproj import Transformer
 
 
-# Set QGIS environment variables
+# QGIS environment setup
+# Legg in egen path til QGIS her
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['QGIS_PREFIX_PATH'] = '/Applications/QGIS-LTR.app/Contents/MacOS'
 os.environ['PYTHONPATH'] = '/Applications/QGIS-LTR.app/Contents/Resources/python:/Applications/QGIS-LTR.app/Contents/Resources/python/plugins'
 print("PYTHONPATH:", os.environ.get('PYTHONPATH'))
 
+#Legg in path til Qgis/plugins
 sys.path.append('/Applications/QGIS-LTR.app/Contents/Resources/python/plugins')
 
-# Initialize QGIS application
+# Start QGIS
 print("Initializing QGIS environment...")
+# Legg inn path til QGIS her
 QgsApplication.setPrefixPath("/Applications/QGIS-LTR.app/Contents/MacOS", True)
 qgs = QgsApplication([], False)
 qgs.setApplicationName("QGIS")  
@@ -27,11 +30,10 @@ qgs.initQgis()
 
 import processing
 
-# Register the processing plugin
+# Registrer om processing plugin er installert
 print("Registering processing plugin...")
 QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
 
-# Test the environment
 print("QGIS environment is fully initialized!")
 
 # Initialize Flask app
@@ -39,11 +41,11 @@ app = Flask(__name__)
 CORS(app)
 
 # Database connection function
-load_dotenv()  # Load environment variables from .env file
+load_dotenv()  # Load environment variables fra .env filen
 def get_db_connection():
     connection_string = os.getenv('DATABASE_URL')
     if not connection_string:
-        raise ValueError("DATABASE_URL is not set in the .env file")
+        raise ValueError("DATABASE_URL, is not set in the .env file")
     return psycopg2.connect(connection_string)
 
 print("DATABASE_URL:", os.getenv('DATABASE_URL'))
@@ -52,6 +54,7 @@ print("DATABASE_URL:", os.getenv('DATABASE_URL'))
 def home():
     return jsonify({'message': 'Welcome to the Shortest Path API!'})
 
+# Fetch lines ut ifra en bounding box
 @app.route('/fetch_lines', methods=['POST'])
 def fetch_lines():
     try:
@@ -61,15 +64,15 @@ def fetch_lines():
         max_x = data['max_x']
         max_y = data['max_y']
 
-        # Expansion factor for the bounding box
-        expansion_factor = 1.2  # Increase by 20% each iteration
-        max_attempts = 5  # Maximum number of expansions
+        # Hvor mye bounding box skal utvides
+        expansion_factor = 1.2  # Øk med 20% hver iterasjon
+        max_attempts = 5  # Maksimalt antall utvidelser
         attempt = 0
 
         while attempt < max_attempts:
             # Pagination variables
-            limit = 1000  # Number of rows to fetch per page
-            offset = 0    # Start at the first row
+            limit = 20000  # Hvor mange linjer som skal hentes per spørring
+            offset = 0    # Start på 0 for første spørring
             all_features = []
 
             conn = get_db_connection()
@@ -91,7 +94,7 @@ def fetch_lines():
                 cursor.execute(query, (min_x, min_y, max_x, max_y, limit, offset))
                 rows = cursor.fetchall()
 
-                # Convert the result to GeoJSON features
+                # Konverterer til GeoJSON
                 features = []
                 for row in rows:
                     features.append({
@@ -105,20 +108,17 @@ def fetch_lines():
                         }
                     })
 
-                # Add the features to the overall list
                 all_features.extend(features)
 
-                # Break the loop if no more rows are returned
+                # Stopp hvis ingen flere linjer er funnet
                 if len(features) < limit:
                     break
 
-                # Increment the offset for the next page
                 offset += limit
 
             cursor.close()
             conn.close()
 
-            # If we fetched enough lines, return the result
             if len(all_features) > 0:
                 geojson = {
                     'type': 'FeatureCollection',
@@ -126,7 +126,7 @@ def fetch_lines():
                 }
                 return jsonify(geojson)
 
-            # Expand the bounding box
+            # Utvid boundingboxen hvis ingen linjer er funnet
             print(f"Expanding bounding box (attempt {attempt + 1})...")
             min_x -= (max_x - min_x) * (expansion_factor - 1) / 2
             max_x += (max_x - min_x) * (expansion_factor - 1) / 2
@@ -134,21 +134,15 @@ def fetch_lines():
             max_y += (max_y - min_y) * (expansion_factor - 1) / 2
             attempt += 1
 
-        # If no lines are found after expanding, return an error
+        # Hvis ingen linjer er funnet etter alle forsøkene
         return jsonify({'error': 'No lines found in the expanded bounding box'}), 404
 
     except Exception as e:
         print("Error fetching lines:", str(e))
         return jsonify({'error': str(e)}), 500
     
-
-@app.route('/shortestpath', methods=['OPTIONS'])
-def shortest_path_options():
-    response = jsonify({'success': True})
-    response.headers.add('Access-Control-Allow-Origin', '*')  # Allow all origins for debugging
-    response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-    return response
+# Enable CORS for alle porter
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Endre punktene fra EPSG:4326 til EPSG:3395
 transformer = Transformer.from_crs("EPSG:4326", "EPSG:3395", always_xy=True)
@@ -165,6 +159,7 @@ def reproject_point_to_epsg3395(point):
     x, y = transformer.transform(lng, lat)
     return f"{x},{y}"
 
+# Funksjon for å Snappe punkter til nærmeste linje
 def snap_to_nearest_line(point, lines):
     from shapely.geometry import Point, LineString, MultiLineString
 
@@ -202,7 +197,7 @@ def snap_to_nearest_line(point, lines):
         return {'lat': snapped_point.y, 'lng': snapped_point.x}
     else:
         print("No nearest line found for point:", point)
-        return point  # Return the original point if no line is found
+        return point 
 
 # Funksjonen for å kalkulere shortestpathAI
 @app.route('/shortestpath', methods=['POST'])
