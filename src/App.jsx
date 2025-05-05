@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L, { map } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-draw/dist/leaflet.draw.css';
+import 'leaflet-draw'
 import { supabase } from './config/supabase';
+import { runShortestPath, visualizeShortestPath } from "./aiShortestPath";
 
 
 function App() {
@@ -16,6 +19,9 @@ function App() {
   const [error, setError] = useState(null);
   const [userPosition, setUserPosition] = useState(null);
   const [useRoadDistance, setUseRoadDistance] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const [endPoint, setEndPoint] = useState(null);
+  const pointsRef = useRef({ startPoint: null, endPoint: null });
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -26,15 +32,18 @@ function App() {
   const datasetConfig = {
     'brannstasjoner': { 
       table: 'NyBrannstasjoner', 
-      nameColumn: 'brannstasjon'
+      nameColumn: 'brannstasjon',
+      type: 'points' 
     },
     'sykehus': { 
       table: 'sykehus', 
-      nameColumn: 'navn'
+      nameColumn: 'navn',
+      type: 'points' 
     },
     'politistasjoner': { 
       table: 'politistasjon', 
-      nameColumn: 'name'
+      nameColumn: 'name',
+      type: 'points' 
     }
   };
 
@@ -105,11 +114,46 @@ function App() {
         flyFotoLayerRef.current.addTo(mapInstanceRef.current);
       }
 
-      // Legg til klikkhåndtering
-      mapInstanceRef.current.on('click', (e) => {
-        const { lat, lng } = e.latlng;
-        setSelectedPoint({ lat, lng });
-      });
+      // Add draw control
+    const drawControl = new L.Control.Draw({
+      draw: {
+        marker: true, // Enable marker placement
+        polyline: true, // Enable line drawing
+        polygon: false, // Disable polygon drawing
+        rectangle: false, // Disable rectangle drawing
+        circle: false, // Disable circle drawing
+      },
+      edit: {
+        featureGroup: new L.FeatureGroup().addTo(mapInstanceRef.current), // Layer for editable features
+      },
+    });
+
+    mapInstanceRef.current.addControl(drawControl);
+
+    mapInstanceRef.current.on(L.Draw.Event.CREATED, (e) => {
+      const layer = e.layer;
+    
+      if (e.layerType === 'marker') {
+        const { lat, lng } = layer.getLatLng();
+    
+        if (!pointsRef.current.startPoint) {
+          pointsRef.current.startPoint = { lat, lng };
+          setStartPoint({ lat, lng });
+          console.log('Start point set:', { lat, lng });
+          layer.bindPopup('Start Point').openPopup();
+        } else if (!pointsRef.current.endPoint) {
+          pointsRef.current.endPoint = { lat, lng };
+          setEndPoint({ lat, lng });
+          console.log('End point set:', { lat, lng });
+          layer.bindPopup('End Point').openPopup();
+        } else {
+          console.warn('Both points are already set. Reset to select new points.');
+        }
+      }
+    
+      // Add the drawn layer to the map
+      layer.addTo(mapInstanceRef.current);
+    });
     }
 
     // Gjør kartet responsive
@@ -150,73 +194,58 @@ function App() {
     }
   }, [activeLayer]);
 
-  // Funksjon for å fjerne alle markører
-  const removeAllMarkers = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Marker) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };  
-
-  // Funksjon for å fjerne alle linjer
-  const removeAllPolylnes = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.eachLayer(layer => {
-        if (layer instanceof L.Polyline) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
-      });
-    }
-  };
+  // Funksjon for å fjerne alle markører og linjer
+const removeAllMarkersAndPolylines = () => {
+  if (mapInstanceRef.current) {
+    mapInstanceRef.current.eachLayer(layer => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+        mapInstanceRef.current.removeLayer(layer);
+      }
+    });
+  }
+};
 
   // Hent data fra Supabase
-  const fetchDataDirectly = async (tableName) => {
+  const fetchDataDirectly = async (tableName, type) => {
     try {
       console.log(`Henter data fra ${tableName}...`);
-      const { data, error } = await supabase.rpc('get_points', {
+      const { data, error } = await supabase.rpc('get_pointstest', {
         table_name: tableName
       });
   
       if (error) {
         throw new Error(`Feil ved henting av data fra ${tableName}: ${error.message}`);
       }
-      
+  
       if (!data || data.length === 0) {
+        console.log(`Ingen data funnet i tabellen ${tableName}.`);
         return [];
       }
-      
-      // Konverter og valider hvert datapunkt
-      const processedData = [];
-      data.forEach((item) => {
-        console.log("Legger til markør:", item);
-        try {
-          const lat = parseFloat(item.lat);
-          const lng = parseFloat(item.lng);
-          
-          if (isNaN(lat) || isNaN(lng)) {
-            return; 
-          }
-          
-          const name = item.name || 'Ukjent';
-          
-          processedData.push({
-            id: item.id,
-            name: name,
-            adresse: '',
-            coordinates: [lat, lng]
-          });
-        } catch (itemError) {
-          console.error('Feil ved prosessering av punkt:', itemError);
-        }
-      });
-      console.log(`Data mottatt fra tabellen ${tableName}:`, data);
-
-      return processedData;
+  
+      console.log(`Data hentet fra ${tableName}:`, data); // Log the retrieved data
+  
+      if (type === 'lines') {
+        // Process lines
+        return data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          coordinates: item.coordinates.coordinates 
+        }));
+      } else {
+        // Process points
+        const processedData = data.map((item) => ({
+          id: item.id,
+          name: item.name || 'Ukjent',
+          adresse: '',
+          coordinates: item.coordinates 
+        }));
+  
+        console.log("Processed data for brannstasjoner:", processedData);
+        return processedData;
+      }
     } catch (error) {
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
+      console.error(`Feil ved henting av data fra ${tableName}:`, error); // Log the error
       return [];
     }
   };
@@ -225,86 +254,73 @@ function App() {
   useEffect(() => {
     const fetchPostGISData = async () => {
       if (!mapInstanceRef.current) return;
-      
+  
       setLoading(true);
       setError(null);
-      
+  
       // Fjern alle eksisterende markører og linjer
-      removeAllMarkers();
-      removeAllPolylnes();
-      
+      removeAllMarkersAndPolylines();
+  
       try {
         const config = datasetConfig[selectedDataset];
         if (!config) {
           throw new Error(`Ugyldig datasett valgt: ${selectedDataset}`);
         }
-        
+  
         // Hent data fra riktig tabell via RPC
-        const items = await fetchDataDirectly(config.table);
-        
+        const items = await fetchDataDirectly(config.table, config.type);
+  
         if (!items || items.length === 0) {
           setPointCount(0);
           setLoading(false);
           return;
         }
-        
-        // Oppdater antall punkter som vises
+  
         setPointCount(items.length);
+  
+        if (config.type === 'lines') {
+          // Add lines to the map
+          items.forEach((item) => {
+            try {
+              // Ensure coordinates are in [lat, lng] format
+              const transformedCoordinates = item.coordinates.map(([lng, lat]) => [lat, lng]);
         
-        // Legg til markører på kartet
-        const markers = [];
+              const line = L.polyline(transformedCoordinates, {
+                color: 'blue',
+                weight: 1
+              }).addTo(mapInstanceRef.current);
         
-        items.forEach((item) => {
-          try {
-            const [lat, lng] = item.coordinates;
-            
-            if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-              return;
+              line.bindPopup(`<strong>${item.name}</strong>`);
+            } catch (error) {
+              console.error('Feil ved opprettelse av linje:', error);
             }
-            
-            // Opprett markør
-            const marker = L.marker([lat, lng]);
-            
-            // Legg til popup
-            const popupContent = `
-              <div>
-                <strong>${item.name}</strong>
-                ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
-              </div>
-            `;
-            
-            marker.bindPopup(popupContent);
-            marker.addTo(mapInstanceRef.current);
-            markers.push(marker);
-          } catch (error) {
-            console.error('Feil ved opprettelse av markør:', error);
-          }
-        });
-        
-        // Zoom til markørene
-        if (markers.length > 0) {
-          try {
-            // Opprett en featureGroup for å finne bounds
-            const tempGroup = L.featureGroup(markers);
-            const bounds = tempGroup.getBounds();
-            
-            if (bounds && bounds.isValid()) {
-              mapInstanceRef.current.fitBounds(bounds, {
-                padding: [50, 50],
-                maxZoom: 13,
-                animate: true
-              });
+          });
+        } else {
+          // Add points to the map
+          items.forEach((item) => {
+            try {
+              const [lat, lng] = item.coordinates;
+  
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+                return;
+              }
+  
+              const marker = L.marker([lat, lng]);
+              const popupContent = `
+                <div>
+                  <strong>${item.name}</strong>
+                  ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
+                </div>
+              `;
+  
+              marker.bindPopup(popupContent);
+              marker.addTo(mapInstanceRef.current);
+            } catch (error) {
+              console.error('Feil ved opprettelse av markør:', error);
             }
-          } catch (e) {
-            console.error('Feil ved zoom til data:', e);
-          }
+          });
         }
-
-        if (!userPosition) {
-          console.warn("User position is not available.");
-          return;
-        }
-
+        
         // Add more robust error checking
         const result = await findClosestMarker(items, useRoadDistance);
         if (!result || !result.closestMarker) {
@@ -335,7 +351,7 @@ function App() {
           `;
           line.bindPopup(distancePopup);
         }
-
+        
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
         setError(`Feil ved prosessering av data: ${error.message}`);
@@ -343,9 +359,24 @@ function App() {
         setLoading(false);
       }
     };
-    
+  
     fetchPostGISData();
   }, [selectedDataset, userPosition]);
+
+  // Visualize selected points
+useEffect(() => {
+  if (startPoint && mapInstanceRef.current) {
+    L.marker([startPoint.lat, startPoint.lng], { color: 'green' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('Start Point');
+  }
+
+  if (endPoint && mapInstanceRef.current) {
+    L.marker([endPoint.lat, endPoint.lng], { color: 'red' })
+      .addTo(mapInstanceRef.current)
+      .bindPopup('End Point');
+  }
+}, [startPoint, endPoint]);
 
   // Håndter søkeradius
   /*
@@ -682,6 +713,39 @@ function App() {
               Flyfoto
             </button>
           </div>
+
+          <button
+  onClick={() => {
+    pointsRef.current = { startPoint: null, endPoint: null };
+    setStartPoint(null);
+    setEndPoint(null);
+    console.log('Points reset.');
+    removeAllMarkersAndPolylines(); // Clear all markers and lines from the map
+  }}
+  >
+  Nullstill punkter
+  </button>
+
+  <button
+  onClick={() => {
+    if (!startPoint || !endPoint) {
+      console.warn('Both start and end points must be set.');
+      return;
+    }
+
+    const start = `${startPoint.lng},${startPoint.lat} [EPSG:4326]`;
+    const end = `${endPoint.lng},${endPoint.lat} [EPSG:4326]`;
+
+    runShortestPath(
+      startPoint,
+      endPoint,
+      (features) => visualizeShortestPath(features, mapInstanceRef),
+      mapInstanceRef
+    );
+  }}
+  >
+  Finn kortest vei
+  </button>
 
           <select
             value={selectedDataset}
