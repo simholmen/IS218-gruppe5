@@ -5,6 +5,7 @@ import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet-draw'
 import { supabase } from './config/supabase';
 import { runShortestPath, visualizeShortestPath } from "./aiShortestPath";
+import { calculateDistanceBetweenTwoPoints, drawLineBetweenTwoPoints, drawRoadRoute } from './roadroute';
 
 
 function App() {
@@ -22,6 +23,7 @@ function App() {
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
   const pointsRef = useRef({ startPoint: null, endPoint: null });
+  const isFetchingRef = useRef(false);
   
   // Referanser til kartlag
   const osmLayerRef = useRef(null);
@@ -210,7 +212,7 @@ const removeAllMarkersAndPolylines = () => {
     try {
       console.log(`Henter data fra ${tableName}...`);
       const { data, error } = await supabase.rpc('get_pointstest', {
-        table_name: tableName
+        table_name: tableName,
       });
   
       if (error) {
@@ -222,30 +224,28 @@ const removeAllMarkersAndPolylines = () => {
         return [];
       }
   
-      console.log(`Data hentet fra ${tableName}:`, data); // Log the retrieved data
+      console.log(`Data hentet fra ${tableName}:`, data);
   
       if (type === 'lines') {
-        // Process lines
         return data.map((item) => ({
           id: item.id,
           name: item.name || 'Ukjent',
-          coordinates: item.coordinates.coordinates 
+          coordinates: item.coordinates.coordinates,
         }));
       } else {
-        // Process points
         const processedData = data.map((item) => ({
           id: item.id,
           name: item.name || 'Ukjent',
           adresse: '',
-          coordinates: item.coordinates 
+          coordinates: item.coordinates,
         }));
   
         console.log("Processed data for brannstasjoner:", processedData);
         return processedData;
       }
     } catch (error) {
+      console.error(`Feil ved henting av data fra ${tableName}:`, error);
       setError(`Kunne ikke hente data fra ${tableName}: ${error.message}`);
-      console.error(`Feil ved henting av data fra ${tableName}:`, error); // Log the error
       return [];
     }
   };
@@ -253,6 +253,9 @@ const removeAllMarkersAndPolylines = () => {
   // Håndter endring av datasett
   useEffect(() => {
     const fetchPostGISData = async () => {
+      if (isFetchingRef.current) return; // Passer på at den bare fetcher data 1 gang
+      isFetchingRef.current = true;
+  
       if (!mapInstanceRef.current) return;
   
       setLoading(true);
@@ -278,32 +281,25 @@ const removeAllMarkersAndPolylines = () => {
   
         setPointCount(items.length);
   
+        // Add points or lines to the map
         if (config.type === 'lines') {
-          // Add lines to the map
           items.forEach((item) => {
             try {
-              // Ensure coordinates are in [lat, lng] format
               const transformedCoordinates = item.coordinates.map(([lng, lat]) => [lat, lng]);
-        
               const line = L.polyline(transformedCoordinates, {
                 color: 'blue',
-                weight: 1
+                weight: 1,
               }).addTo(mapInstanceRef.current);
-        
               line.bindPopup(`<strong>${item.name}</strong>`);
             } catch (error) {
               console.error('Feil ved opprettelse av linje:', error);
             }
           });
         } else {
-          // Add points to the map
           items.forEach((item) => {
             try {
               const [lat, lng] = item.coordinates;
-  
-              if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
-                return;
-              }
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
   
               const marker = L.marker([lat, lng]);
               const popupContent = `
@@ -312,7 +308,6 @@ const removeAllMarkersAndPolylines = () => {
                   ${item.adresse ? `<br>Adresse: ${item.adresse}` : ''}
                 </div>
               `;
-  
               marker.bindPopup(popupContent);
               marker.addTo(mapInstanceRef.current);
             } catch (error) {
@@ -320,29 +315,35 @@ const removeAllMarkersAndPolylines = () => {
             }
           });
         }
-        
-        // Add more robust error checking
+  
+        // Find the closest marker
         const result = await findClosestMarker(items, useRoadDistance);
         if (!result || !result.closestMarker) {
           console.warn("No closest marker found");
           return;
         }
-
-        const { closestMarker, shortestDistance } = result;      
+  
+        const { closestMarker, shortestDistance } = result;
         if (!closestMarker || !closestMarker.coordinates || closestMarker.coordinates.length !== 2) {
           console.error("Invalid closest marker or coordinates:", closestMarker);
           return;
         }
-
+  
         let line;
         if (useRoadDistance && closestMarker.routeGeometry) {
-          // Draw line following the road
-          line = drawRoadRoute(closestMarker.routeGeometry, 'blue');
+          if (mapInstanceRef.current) {
+            line = drawRoadRoute(closestMarker.routeGeometry, mapInstanceRef.current, 'blue');
+          } else {
+            console.error('Map instance is not initialized.');
+          }
         } else {
-          // Draw direct line (air distance)
-          line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates);
+          if (mapInstanceRef.current) {
+            line = drawLineBetweenTwoPoints(userPosition, closestMarker.coordinates, mapInstanceRef.current);
+          } else {
+            console.error('Map instance is not initialized.');
+          }
         }
-
+  
         if (line) {
           const distancePopup = `
             <div>
@@ -351,12 +352,12 @@ const removeAllMarkersAndPolylines = () => {
           `;
           line.bindPopup(distancePopup);
         }
-        
       } catch (error) {
         console.error('Feil ved prosessering av data:', error);
         setError(`Feil ved prosessering av data: ${error.message}`);
       } finally {
         setLoading(false);
+        isFetchingRef.current = false; // Reset the flag
       }
     };
   
@@ -415,15 +416,15 @@ useEffect(() => {
       console.error("Invalid position data received:", position);
       return;
     }
-    
+  
     const { latitude, longitude } = position.coords;
-    // console.log("User position updated:", latitude, longitude); // Debugging log
     if (isNaN(latitude) || isNaN(longitude)) {
       console.error("Invalid GPS coordinates received:", latitude, longitude);
       return;
     }
-
+  
     const newPosition = L.latLng(latitude, longitude);
+    setUserPosition(newPosition);
 
     // Hvis markør allerede finnes, oppdater posisjonen, ellers opprett ny
     if (userMarker) {
@@ -440,65 +441,6 @@ useEffect(() => {
     setUserPosition(newPosition); // Oppdater state
   }
 
-  // Funksjon for å regne ut avstand mellom to punkter og tegne en linje mellom de
-  function calculateDistanceBetweenTwoPoints(pointA, pointB) {
-    if (!pointA || !pointB || !pointB[0] || !pointB[1]) {
-      console.error("Invalid points for distance calculation:", pointA, pointB);
-      return Infinity; // Return a high value to avoid incorrect comparisons
-    }
-    try {
-      let distance = pointA.distanceTo(L.latLng(pointB[0], pointB[1]));
-      return distance;
-    } catch (e) {
-      console.error('Feil ved lesing av posisjon:', e);
-      return Infinity;
-    }
-  }
-
-  function drawLineBetweenTwoPoints(pointA, pointB) {
-    if (!pointA || !pointB || !pointB[0] || !pointB[1]) {
-      console.error("Invalid points for drawing line:", pointA, pointB);
-      return null;
-    }
-
-    try {
-      let line = L.polyline([pointA, L.latLng(pointB[0], pointB[1])], {
-        color: 'red',
-        weight: 5,
-      }).addTo(mapInstanceRef.current);
-      return line;
-    } catch (e) {
-      console.error('Feil ved lesing av posisjon:', e);
-      return null;
-    }
-  }
-
-    // New function to draw a road route
-  function drawRoadRoute(routeGeometry, color = 'blue') {
-    if (!mapInstanceRef.current || !routeGeometry || routeGeometry.length === 0) {
-      console.error("Invalid route geometry or map instance");
-      return null;
-    }
-  
-    try {
-      // Create an array of LatLng objects from the route geometry
-      // Note: GeoJSON returns coordinates as [lng, lat] but Leaflet needs [lat, lng]
-      const latLngs = routeGeometry.map(coord => L.latLng(coord[1], coord[0]));
-      
-      // Create the polyline with the route coordinates
-      const roadLine = L.polyline(latLngs, {
-        color: color,
-        weight: 5,
-        opacity: 0.7,
-        lineJoin: 'round'
-      }).addTo(mapInstanceRef.current);
-      
-      return roadLine;
-    } catch (e) {
-      console.error('Error drawing road route:', e);
-      return null;
-    }
-  }
 
 
   // Add this function to calculate road distances using OpenRouteService
