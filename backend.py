@@ -1,5 +1,5 @@
 import os
-import processing
+import sys
 import psycopg2
 import requests
 from dotenv import load_dotenv
@@ -14,6 +14,9 @@ from pyproj import Transformer
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['QGIS_PREFIX_PATH'] = '/Applications/QGIS-LTR.app/Contents/MacOS'
 os.environ['PYTHONPATH'] = '/Applications/QGIS-LTR.app/Contents/Resources/python:/Applications/QGIS-LTR.app/Contents/Resources/python/plugins'
+print("PYTHONPATH:", os.environ.get('PYTHONPATH'))
+
+sys.path.append('/Applications/QGIS-LTR.app/Contents/Resources/python/plugins')
 
 # Initialize QGIS application
 print("Initializing QGIS environment...")
@@ -21,6 +24,8 @@ QgsApplication.setPrefixPath("/Applications/QGIS-LTR.app/Contents/MacOS", True)
 qgs = QgsApplication([], False)
 qgs.setApplicationName("QGIS")  
 qgs.initQgis()
+
+import processing
 
 # Register the processing plugin
 print("Registering processing plugin...")
