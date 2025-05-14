@@ -1,5 +1,7 @@
 # Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)
 
+Se tilgjengelig fork for en tidligere versjon av prosjektet ([Oppgave 2](https://github.com/ToBeAss/IS218-gruppe5-oppgave2))
+
 ## Innholdsfortegnelse
 
 - [Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)](#oppgave-2-geografiske-it-utvikling-is-218-gruppe-5)
