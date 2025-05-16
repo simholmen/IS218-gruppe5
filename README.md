@@ -1,10 +1,10 @@
-# Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)
+# Oppgave 5: Mappeinnlevering (IS-218 Gruppe 5)
 >[!NOTE]
 >Se tilgjengelig fork for en tidligere versjon av prosjektet ([Oppgave 2](https://github.com/ToBeAss/IS218-gruppe5-oppgave2)).
 
 ## Innholdsfortegnelse
 
-- [Oppgave 2: Geografiske IT-utvikling (IS-218 Gruppe 5)](#oppgave-2-geografiske-it-utvikling-is-218-gruppe-5)
+- [Oppgave 5: Mappeinnlevering (IS-218 Gruppe 5)](#oppgave-2-geografiske-it-utvikling-is-218-gruppe-5)
   - [Problemstilling](#problemstilling)
   - [Beskrivelse](#beskrivelse)
     - [Formål](#formål)
@@ -33,7 +33,9 @@
 
 ## Problemstilling
 
-> Hvordan kan vi visualisere og analysere geografisk beredskap ved hjelp av PostGIS og Leaflet for å finne nærmeste beredskapsressurser i sanntid?
+> Det er ikke alltid klart hvor godt skoler og barnehager er dekket av beredskapstjenester som politi, brann og helse. Dette er spesielt tilfellet i krisesituasjoner hvor normal infrastruktur kan være utilgjengelig. 
+I en krisesituasjon er rask og sikker tilgang til beredskapstjenester avgjørende for å redde liv. Identifisering av svak dekning og forbedring av rutevalg kan styrke kriseberedskap og redusere risiko for sårbare grupper som barn i barnehager og skoler. 
+
 
 ## Beskrivelse
 
