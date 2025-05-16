@@ -2,4 +2,7 @@
 >[!NOTE]
 >Se tilgjengelig fork for en tidligere versjon av prosjektet ([Oppgave 2](https://github.com/ToBeAss/IS218-gruppe5-oppgave2)).
 
+
 Nærmere beskrivelse av oppgave 5 er beskrevet i prosjekt rapporten
+
+Video av løsning: https://youtu.be/qYw4H6qkzm0
